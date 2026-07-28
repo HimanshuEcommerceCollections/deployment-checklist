@@ -60,8 +60,8 @@ export default async function DeploymentsPage() {
             </TableHeader>
             <TableBody>
               {deployments.map((dep: any) => {
-                const checkedCount = 0 // Would need items included to calculate
-                const totalCount = dep._count.items
+                const checkedCount = 0 // Would need itemStates included to calculate
+                const totalCount = dep._count.itemStates
                 const progress = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 0
 
                 return (
