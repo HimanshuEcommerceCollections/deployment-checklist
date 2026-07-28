@@ -12,7 +12,7 @@ export class ProjectsService {
       where: {
         organizationId: ctx.organizationId,
         deletedAt: null,
-        members: {
+        memberships: {
           some: {
             userId: ctx.actorId,
             deletedAt: null,
@@ -35,7 +35,7 @@ export class ProjectsService {
         id,
         organizationId: ctx.organizationId,
         deletedAt: null,
-        members: {
+        memberships: {
           some: {
             userId: ctx.actorId,
             deletedAt: null,
@@ -44,7 +44,7 @@ export class ProjectsService {
       },
       include: {
         environments: { where: { deletedAt: null } },
-        members: { where: { deletedAt: null }, include: { user: true } },
+        memberships: { where: { deletedAt: null }, include: { user: true } },
         _count: { select: { deployments: true } },
       },
     })

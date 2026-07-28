@@ -47,7 +47,7 @@ export default async function ProjectPage(props: { params: Promise<{ id: string 
             <CardTitle className="text-sm font-medium">Members</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{project.members.length}</p>
+            <p className="text-2xl font-bold">{project.memberships?.length || 0}</p>
           </CardContent>
         </Card>
 
@@ -91,17 +91,17 @@ export default async function ProjectPage(props: { params: Promise<{ id: string 
         </Card>
       )}
 
-      {project.members.length > 0 && (
+      {project.memberships && project.memberships.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Team Members</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {project.members.map((member: any) => (
+              {project.memberships.map((member: any) => (
                 <div key={member.id} className="flex items-center justify-between py-2">
-                  <span>{member.user.name}</span>
-                  <span className="text-sm text-gray-600">{member.user.email}</span>
+                  <span>{member.user?.name}</span>
+                  <span className="text-sm text-gray-600">{member.user?.email}</span>
                 </div>
               ))}
             </div>
