@@ -60,36 +60,8 @@ export default async function ProjectPage(props: { params: Promise<{ id: string 
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Environments</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{project.environments.length}</p>
-          </CardContent>
-        </Card>
       </div>
 
-      {project.environments.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Environments</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {project.environments.map((env: any) => (
-                <div key={env.id} className="flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1">
-                  <div
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: env.color }}
-                  />
-                  <span className="text-sm">{env.name}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {project.memberships && project.memberships.length > 0 && (
         <Card>

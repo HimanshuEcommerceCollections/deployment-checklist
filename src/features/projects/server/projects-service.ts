@@ -20,7 +20,6 @@ export class ProjectsService {
         },
       },
       include: {
-        environments: { where: { deletedAt: null }, take: 3 },
         _count: { select: { memberships: true, deployments: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -43,7 +42,6 @@ export class ProjectsService {
         },
       },
       include: {
-        environments: { where: { deletedAt: null } },
         memberships: { where: { deletedAt: null }, include: { user: true } },
         _count: { select: { deployments: true } },
       },
