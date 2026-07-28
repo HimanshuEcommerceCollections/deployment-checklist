@@ -1,0 +1,35 @@
+# MongoDB as a single-node REPLICA SET.
+#
+# The replica set is not optional: Prisma interactive transactions require one,
+# and every write path in this system (item toggles, run creation, audit writes)
+# depends on them. A standalone mongod will fail at the first $transaction with
+# "Transactions are not supported by this deployment".
+#
+# No Docker? Use `npm run dev:db` instead — it starts an equivalent single-node
+# replica set with no installation required. See scripts/dev-db.ts.
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: deployment-checklist-mongo
+    command: ['mongod', '--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Initiates the replica set on first boot, then reports status thereafter.
+      # `localhost` as the member host keeps the connection string simple for
+      # host-side clients using directConnection=true.
+      test: >
+        mongosh --quiet --eval "
+          try { rs.status().ok }
+          catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}).ok }
+        "
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  mongo-data:

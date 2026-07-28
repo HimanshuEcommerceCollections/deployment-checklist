@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next
+.next/
+out/
+build/
+next-env.d.ts
+
+# env — NEVER commit these
+.env
+.env.local
+.env.*.local
+.env.production
+
+# local dev database (mongodb-memory-server binaries + data)
+.mongo/
+.cache/
+
+# local file storage provider
+storage/
+uploads/
+
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+.vercel
+.idea/
+*.log
+npm-debug.log*

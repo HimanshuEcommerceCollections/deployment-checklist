@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deployment Launch Console</title>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<style>
+  @font-face {
+    font-family: 'local-mono';
+    src: local('JetBrains Mono'), local('Consolas');
+  }
+
+  :root{
+    --bg: #0a0e17;
+    --panel: #111a2b;
+    --panel-2: #0d1420;
+    --line: #22314a;
+    --text: #e7ecf3;
+    --dim: #7d8ba3;
+    --go: #35d68f;
+    --go-dim: #103825;
+    --hold: #f0b54c;
+    --hold-dim: #3a2c10;
+    --blocked: #ef5f6b;
+    --blocked-dim: #3a1418;
+    --cyan: #4fc7e8;
+  }
+
+  *{ box-sizing: border-box; }
+
+  html,body{
+    margin:0; padding:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body{
+    background-image:
+      radial-gradient(circle at 15% 0%, rgba(79,199,232,0.06), transparent 40%),
+      radial-gradient(circle at 85% 100%, rgba(53,214,143,0.05), transparent 40%);
+    min-height: 100vh;
+    padding: 28px 16px 60px;
+  }
+
+  .wrap{ max-width: 920px; margin: 0 auto; }
+
+  /* ---------- HEADER / GAUGE ---------- */
+  .console-head{
+    display:flex; align-items:center; justify-content:space-between;
+    gap: 20px; flex-wrap: wrap;
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px 26px;
+    margin-bottom: 22px;
+    position: relative;
+    overflow: hidden;
+  }
+  .console-head::before{
+    content:"";
+    position:absolute; inset:0;
+    background: repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0 1px, transparent 1px 28px);
+    pointer-events:none;
+  }
+
+  .head-left{ position: relative; z-index:1; }
+  .eyebrow{
+    font: 700 11px/1 'Courier New', monospace;
+    letter-spacing: 2.5px;
+    color: var(--cyan);
+    text-transform: uppercase;
+    margin: 0 0 8px;
+  }
+  h1{
+    font-size: clamp(22px, 3.4vw, 30px);
+    margin: 0 0 6px;
+    letter-spacing: -0.3px;
+  }
+  .subtext{ color: var(--dim); font-size: 13.5px; margin:0; max-width: 480px; }
+
+  .gauge-block{ display:flex; align-items:center; gap:16px; position:relative; z-index:1; }
+  .gauge-wrap{ position:relative; width:96px; height:96px; }
+  .gauge-wrap svg{ width:100%; height:100%; transform: rotate(-90deg); }
+  .gauge-track{ fill:none; stroke: var(--line); stroke-width:9; }
+  .gauge-fill{ fill:none; stroke: var(--go); stroke-width:9; stroke-linecap:round; transition: stroke-dasharray .5s ease, stroke .3s ease; }
+  .gauge-pct{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font: 700 20px/1 'Courier New', monospace;
+  }
+  .status-readout{ text-align:left; }
+  .status-label{ font: 700 10.5px/1 'Courier New', monospace; color: var(--dim); letter-spacing:2px; margin-bottom:6px; }
+  .status-value{
+    font: 800 18px/1 'Courier New', monospace;
+    letter-spacing: 1px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    display:inline-block;
+  }
+  .status-value.go{ color: var(--go); background: var(--go-dim); border:1px solid rgba(53,214,143,0.35); }
+  .status-value.hold{ color: var(--hold); background: var(--hold-dim); border:1px solid rgba(240,181,76,0.35); }
+
+  /* ---------- SECTIONS ---------- */
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .panel-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 15px 18px;
+    cursor: pointer;
+    user-select:none;
+    gap: 12px;
+  }
+  .panel-head:hover{ background: rgba(255,255,255,0.02); }
+  .panel-title{
+    display:flex; align-items:center; gap: 12px;
+    font-size: 15px; font-weight: 600;
+  }
+  .panel-index{
+    font: 700 11px/1 'Courier New', monospace;
+    color: var(--dim);
+    border: 1px solid var(--line);
+    padding: 4px 7px;
+    border-radius: 5px;
+    min-width: 30px;
+    text-align:center;
+  }
+  .panel-meta{ display:flex; align-items:center; gap:14px; }
+  .panel-count{ font: 700 12px/1 'Courier New', monospace; color: var(--dim); white-space:nowrap; }
+  .chevron{ color: var(--dim); transition: transform .25s ease; font-size: 12px; }
+  .panel.open .chevron{ transform: rotate(90deg); }
+
+  .mini-bar{ width:60px; height:5px; background: var(--line); border-radius:4px; overflow:hidden; }
+  .mini-bar > span{ display:block; height:100%; background: var(--go); transition: width .3s ease; }
+
+  .panel-body{
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .3s ease;
+    border-top: 1px solid transparent;
+  }
+  .panel.open .panel-body{ border-top: 1px solid var(--line); max-height: 2000px; }
+
+  .item{
+    display:flex; align-items:flex-start; gap: 12px;
+    padding: 11px 18px 11px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .item:last-child{ border-bottom:none; }
+
+  .toggle{
+    appearance:none; -webkit-appearance:none;
+    width: 20px; height: 20px; flex: 0 0 20px;
+    border-radius: 5px;
+    border: 1.5px solid var(--line);
+    background: var(--panel-2);
+    margin-top: 1px;
+    cursor: pointer;
+    position: relative;
+    transition: all .15s ease;
+  }
+  .toggle:checked{
+    background: var(--go);
+    border-color: var(--go);
+  }
+  .toggle:checked::after{
+    content:"";
+    position:absolute; left:6px; top:2px;
+    width:5px; height:10px;
+    border: solid #0a0e17;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  .toggle:focus-visible{ outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+  .item label{
+    font-size: 14px;
+    line-height: 1.45;
+    cursor: pointer;
+  }
+  .item.done label{ color: var(--dim); text-decoration: line-through; text-decoration-color: rgba(125,139,163,0.5); }
+
+  /* ---------- FOOTER CONTROLS ---------- */
+  .controls{
+    display:flex; justify-content:space-between; align-items:center;
+    gap: 12px; flex-wrap: wrap;
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--line);
+  }
+  .save-note{ font-size: 12px; color: var(--dim); font-family: 'Courier New', monospace; }
+  .btn-group{ display:flex; gap:10px; }
+  button.action{
+    font: 700 12px/1 'Courier New', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 10px 16px;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+    transition: all .15s ease;
+  }
+  button.action:hover{ border-color: var(--cyan); color: var(--cyan); }
+  button.action.danger:hover{ border-color: var(--blocked); color: var(--blocked); }
+
+  @media print{
+    body{ background: #fff; color:#000; padding:0; }
+    .controls, .console-head::before{ display:none; }
+    .panel-body{ max-height:none !important; }
+    .panel, .console-head{ border-color:#ccc; break-inside: avoid; }
+    .status-value.go{ background:#e8fbf2; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition: none !important; }
+  }
+
+  @media (max-width: 520px){
+    .console-head{ flex-direction:column; align-items:flex-start; }
+    .gauge-block{ width:100%; justify-content:space-between; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="console-head">
+    <div class="head-left">
+      <p class="eyebrow">// Release Control</p>
+      <h1>Deployment Launch Console</h1>
+      <p class="subtext">Work through every panel before you push the button. Your progress saves automatically in this browser.</p>
+    </div>
+    <div class="gauge-block">
+      <div class="gauge-wrap">
+        <svg viewBox="0 0 100 100">
+          <circle class="gauge-track" cx="50" cy="50" r="42"></circle>
+          <circle id="gaugeFill" class="gauge-fill" cx="50" cy="50" r="42" stroke-dasharray="0 264"></circle>
+        </svg>
+        <div class="gauge-pct" id="gaugePct">0%</div>
+      </div>
+      <div class="status-readout">
+        <div class="status-label">LAUNCH STATUS</div>
+        <div class="status-value hold" id="statusValue">HOLD</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="panels"></div>
+
+  <div class="controls">
+    <div class="save-note" id="saveNote">Progress saved in this browser</div>
+    <div class="btn-group">
+      <button class="action" onclick="window.print()">Print / Save PDF</button>
+      <button class="action danger" id="resetBtn">Reset Checklist</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const DATA = [
+  { title: "Code & Review", items: [
+    "All code merged to the release branch (main / release/x.x)",
+    "Pull request(s) approved by required reviewers",
+    "No unresolved review comments or blocking TODOs",
+    "Linting and static analysis pass with no new warnings",
+    "Dependency versions locked (lockfile committed, no 'latest' tags)",
+    "No secrets, API keys, or debug code left in the codebase"
+  ]},
+  { title: "Testing", items: [
+    "Unit tests pass (CI green)",
+    "Integration tests pass",
+    "End-to-end / smoke tests pass on staging",
+    "Manual QA sign-off on critical user flows",
+    "Load/performance testing done (if traffic-sensitive change)",
+    "Edge cases and error states verified"
+  ]},
+  { title: "Security", items: [
+    "Dependency vulnerability scan run (npm audit, Snyk, Dependabot)",
+    "No hardcoded credentials or tokens",
+    "Auth/permissions changes reviewed",
+    "HTTPS/TLS enforced where applicable",
+    "Input validation & sanitization checked for new endpoints"
+  ]},
+  { title: "Database & Data", items: [
+    "Migrations tested on a staging copy of production data",
+    "Migrations are backward-compatible during rollout",
+    "Backup taken immediately before migration runs",
+    "Rollback script/plan for migrations prepared",
+    "Data seed/config changes documented"
+  ]},
+  { title: "Configuration & Environment", items: [
+    "Environment variables set correctly for target environment",
+    "Feature flags configured (on/off as intended)",
+    "Secrets rotated/updated in vault or secrets manager",
+    "Config diffs between staging and production reviewed",
+    "Third-party service keys/quotas confirmed (payment, email, etc.)"
+  ]},
+  { title: "Infrastructure", items: [
+    "Build artifacts/images created and tagged with version number",
+    "Auto-scaling / resource limits reviewed for expected load",
+    "CDN/cache invalidation plan ready (if static assets changed)",
+    "DNS/load balancer changes reviewed (if applicable)",
+    "Health checks and readiness probes configured"
+  ]},
+  { title: "Monitoring & Rollback", items: [
+    "Logging in place for new features/changes",
+    "Alerts/dashboards updated for new metrics or endpoints",
+    "Error tracking (e.g. Sentry) configured for new code paths",
+    "Rollback plan documented and tested",
+    "Owner assigned to watch metrics post-deploy"
+  ]},
+  { title: "Communication", items: [
+    "Deployment window scheduled and communicated to team",
+    "Stakeholders notified of user-facing changes",
+    "Release notes / changelog drafted",
+    "Support/customer success briefed on changes",
+    "Maintenance banner or status page updated (if downtime expected)"
+  ]},
+  { title: "Documentation", items: [
+    "README / internal docs updated",
+    "API docs updated (if endpoints changed)",
+    "Runbook updated with any new operational steps"
+  ]},
+  { title: "Final Go / No-Go", items: [
+    "All above sections checked",
+    "Deployment owner identified",
+    "Rollback owner identified",
+    "Go decision confirmed by team lead / release manager"
+  ]}
+];
+
+const STORAGE_KEY = "deploy_console_state_v1";
+let state = {};
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    state = raw ? JSON.parse(raw) : {};
+  } catch(e){
+    state = {};
+    document.getElementById('saveNote').textContent = "Storage unavailable — progress won't persist in this view";
+  }
+}
+
+function saveState(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch(e){ /* silently ignore, in-memory state still works this session */ }
+}
+
+function itemKey(si, ii){ return si + "_" + ii; }
+
+function buildPanels(){
+  const root = document.getElementById('panels');
+  root.innerHTML = "";
+  DATA.forEach((section, si) => {
+    const panel = document.createElement('div');
+    panel.className = 'panel';
+    if(si === 0) panel.classList.add('open');
+    panel.dataset.index = si;
+
+    const head = document.createElement('div');
+    head.className = 'panel-head';
+    head.innerHTML = `
+      <div class="panel-title">
+        <span class="panel-index">${String(si+1).padStart(2,'0')}</span>
+        <span>${section.title}</span>
+      </div>
+      <div class="panel-meta">
+        <div class="mini-bar"><span style="width:0%"></span></div>
+        <span class="panel-count">0/${section.items.length}</span>
+        <span class="chevron">▶</span>
+      </div>
+    `;
+    head.addEventListener('click', () => panel.classList.toggle('open'));
+
+    const body = document.createElement('div');
+    body.className = 'panel-body';
+
+    section.items.forEach((text, ii) => {
+      const key = itemKey(si, ii);
+      const row = document.createElement('div');
+      row.className = 'item';
+      const id = `chk_${key}`;
+      row.innerHTML = `
+        <input type="checkbox" class="toggle" id="${id}" data-si="${si}" data-ii="${ii}">
+        <label for="${id}">${text}</label>
+      `;
+      body.appendChild(row);
+    });
+
+    panel.appendChild(head);
+    panel.appendChild(body);
+    root.appendChild(panel);
+  });
+
+  root.querySelectorAll('.toggle').forEach(cb => {
+    cb.addEventListener('change', onToggle);
+  });
+}
+
+function onToggle(e){
+  const si = e.target.dataset.si, ii = e.target.dataset.ii;
+  state[itemKey(si, ii)] = e.target.checked;
+  saveState();
+  refreshUI();
+}
+
+function refreshUI(){
+  let totalChecked = 0, totalItems = 0;
+
+  DATA.forEach((section, si) => {
+    let checked = 0;
+    section.items.forEach((_, ii) => {
+      const key = itemKey(si, ii);
+      const cb = document.getElementById(`chk_${key}`);
+      const isChecked = !!state[key];
+      if(cb){
+        cb.checked = isChecked;
+        cb.closest('.item').classList.toggle('done', isChecked);
+      }
+      if(isChecked) checked++;
+    });
+    totalChecked += checked;
+    totalItems += section.items.length;
+
+    const panel = document.querySelector(`.panel[data-index="${si}"]`);
+    panel.querySelector('.panel-count').textContent = `${checked}/${section.items.length}`;
+    const pct = section.items.length ? (checked/section.items.length*100) : 0;
+    panel.querySelector('.mini-bar span').style.width = pct + '%';
+  });
+
+  const overallPct = totalItems ? Math.round(totalChecked/totalItems*100) : 0;
+  const circumference = 2 * Math.PI * 42;
+  const fill = document.getElementById('gaugeFill');
+  fill.setAttribute('stroke-dasharray', `${circumference*overallPct/100} ${circumference}`);
+  document.getElementById('gaugePct').textContent = overallPct + '%';
+
+  const statusEl = document.getElementById('statusValue');
+  if(overallPct === 100){
+    statusEl.textContent = 'GO';
+    statusEl.className = 'status-value go';
+    fill.style.stroke = 'var(--go)';
+  } else {
+    statusEl.textContent = 'HOLD';
+    statusEl.className = 'status-value hold';
+    fill.style.stroke = overallPct > 60 ? 'var(--hold)' : 'var(--blocked)';
+  }
+}
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if(confirm('Clear all checked items? This cannot be undone.')){
+    state = {};
+    saveState();
+    refreshUI();
+  }
+});
+
+loadState();
+buildPanels();
+refreshUI();
+</script>
+</body>
+</html>

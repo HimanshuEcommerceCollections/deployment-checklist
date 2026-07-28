@@ -1,0 +1,267 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* Tailwind v4 is CSS-first: there is no tailwind.config.js. The theme lives here. */
+
+@custom-variant dark (&:is(.dark *));
+
+/* ===========================================================================
+   Launch-console palette, carried over from the reference design.
+
+   Dark is this design's home — the reference was dark-only. Light mode is
+   derived rather than primary, and the two are held to the same contrast bar.
+   =========================================================================== */
+
+:root {
+  /* Brand / status colours are shared across both themes so a GO badge reads
+     the same everywhere. Tints differ per theme. */
+  --go: #1f9d68;
+  --go-surface: #e6f8ef;
+  --hold: #b57d18;
+  --hold-surface: #fdf4e3;
+  --blocked: #d1354a;
+  --blocked-surface: #fdeaec;
+  --cyan: #1a7f9c;
+
+  /* Light surfaces */
+  --background: #fbfcfd;
+  --foreground: #16202e;
+  --panel: #ffffff;
+  --panel-2: #f4f6f9;
+  --line: #dde3ec;
+
+  --card: var(--panel);
+  --card-foreground: var(--foreground);
+  --popover: var(--panel);
+  --popover-foreground: var(--foreground);
+
+  --primary: #16202e;
+  --primary-foreground: #fbfcfd;
+  --secondary: var(--panel-2);
+  --secondary-foreground: var(--foreground);
+
+  --muted: var(--panel-2);
+  /* Contrast-checked against --background: ≥ 4.5:1 for body text. */
+  --muted-foreground: #5a6779;
+
+  --accent: var(--panel-2);
+  --accent-foreground: var(--foreground);
+  --destructive: var(--blocked);
+  --destructive-foreground: #ffffff;
+
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--cyan);
+
+  --radius: 0.75rem;
+}
+
+.dark {
+  /* Exact values from the reference HTML. */
+  --go: #35d68f;
+  --go-surface: #103825;
+  --hold: #f0b54c;
+  --hold-surface: #3a2c10;
+  --blocked: #ef5f6b;
+  --blocked-surface: #3a1418;
+  --cyan: #4fc7e8;
+
+  --background: #0a0e17;
+  --foreground: #e7ecf3;
+  --panel: #111a2b;
+  --panel-2: #0d1420;
+  --line: #22314a;
+
+  --card: var(--panel);
+  --card-foreground: var(--foreground);
+  --popover: var(--panel);
+  --popover-foreground: var(--foreground);
+
+  --primary: var(--foreground);
+  --primary-foreground: var(--background);
+  --secondary: var(--panel-2);
+  --secondary-foreground: var(--foreground);
+
+  --muted: var(--panel-2);
+  /* The reference used #7d8ba3, which measures ~4.3:1 on --panel — under AA for
+     body text, and it is used for completed item labels, exactly the text a
+     reviewer needs to read. Lifted to ~6.7:1. */
+  --muted-foreground: #93a1b8;
+
+  --accent: #1a2739;
+  --accent-foreground: var(--foreground);
+  --destructive: var(--blocked);
+  --destructive-foreground: #0a0e17;
+
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--cyan);
+}
+
+/* ===========================================================================
+   Token registration — makes the variables above available as utilities
+   (bg-panel, text-go, border-line, font-mono, …)
+   =========================================================================== */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Status tokens */
+  --color-go: var(--go);
+  --color-go-surface: var(--go-surface);
+  --color-hold: var(--hold);
+  --color-hold-surface: var(--hold-surface);
+  --color-blocked: var(--blocked);
+  --color-blocked-surface: var(--blocked-surface);
+  --color-cyan: var(--cyan);
+
+  --font-sans:
+    var(--font-inter), 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono:
+    var(--font-jetbrains), 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  /* The eyebrow / status-label treatment from the reference, as a token. */
+  --tracking-console: 0.16em;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* ===========================================================================
+   Base
+   =========================================================================== */
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* The two radial washes from the reference design. */
+    background-image:
+      radial-gradient(circle at 15% 0%, color-mix(in oklab, var(--cyan) 6%, transparent), transparent 42%),
+      radial-gradient(circle at 85% 100%, color-mix(in oklab, var(--go) 5%, transparent), transparent 42%);
+    background-attachment: fixed;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* The reference only gave focus rings to checkboxes. Everything gets one. */
+  :focus-visible {
+    @apply outline-ring outline-2 outline-offset-2;
+  }
+
+  /* Tabular numerals everywhere numbers are compared vertically. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* The scanline overlay on the console header — decorative, so it is a utility
+     rather than markup, and it is hidden when printing. */
+  .console-scanlines {
+    position: relative;
+    overflow: hidden;
+  }
+  .console-scanlines::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--foreground) 2%, transparent) 0 1px,
+      transparent 1px 28px
+    );
+    pointer-events: none;
+  }
+
+  /* The eyebrow: "// RELEASE CONTROL" */
+  .eyebrow {
+    @apply font-mono text-cyan text-[11px] font-bold uppercase;
+    letter-spacing: var(--tracking-console);
+  }
+}
+
+/* ===========================================================================
+   Print — a completed checklist is a real artifact teams file with a release,
+   so this is a feature, not a leftover from the reference.
+   =========================================================================== */
+
+@media print {
+  .no-print,
+  .console-scanlines::before {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    background-image: none !important;
+  }
+
+  /* Force every collapsed section open so the printed sheet is complete. */
+  [data-print-expand],
+  [data-state='closed'] > [data-print-expand] {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .panel,
+  [data-print-avoid-break] {
+    break-inside: avoid;
+    border-color: #ccc !important;
+  }
+
+  a[href]::after {
+    content: ' (' attr(href) ')';
+    font-size: 0.75em;
+    color: #555;
+  }
+}
+
+/* Honoured from the reference design. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

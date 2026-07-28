@@ -1,0 +1,1086 @@
+// ===========================================================================
+//  Deployment Checklist System — Prisma Schema (MongoDB)
+// ---------------------------------------------------------------------------
+//  MongoDB-specific constraints this schema is designed around:
+//
+//  1. `prisma migrate` does NOT support MongoDB. Schema is applied with
+//     `prisma db push`. Data backfills run through our own migration runner
+//     (see model DataMigration + docs/13-recommendations.md).
+//  2. Interactive transactions require a replica set. Local dev must run
+//     mongod as a single-node replica set, or use MongoDB Atlas.
+//  3. The MongoDB connector always uses relationMode = "prisma" — referential
+//     integrity is emulated client-side. We deliberately do NOT use cascade
+//     deletes: emulated cascades issue unbounded queries, and this system
+//     soft-deletes by default. Destructive flows go through service-layer
+//     routines instead.
+//  4. Implicit many-to-many is not available. Join models are explicit
+//     (ProjectTemplate) — which we want anyway, for link-level metadata.
+//  5. Composite types (`type`) are embedded documents. Prisma cannot update a
+//     single element of a composite LIST by predicate — it rewrites the whole
+//     array. That is why mutable per-item checklist state lives in its own
+//     collection (ChecklistItemState) while the immutable snapshot is embedded.
+//
+//  Every tenant-scoped model carries `organizationId` from day one so that
+//  multi-org support is additive, not a rewrite. See docs/13.
+// ===========================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+//  ENUMS
+// ---------------------------------------------------------------------------
+//  Rule of thumb: enum only when the value set is coupled to code paths
+//  (state machines, policy switches). Anything the customer must be able to
+//  extend at runtime is a collection instead — Environment, Role, Permission
+//  assignment, audit action codes.
+// ===========================================================================
+
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  ARCHIVED
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum AuthTokenType {
+  INVITE
+  PASSWORD_RESET
+  EMAIL_CHANGE
+}
+
+enum TemplateVersionStatus {
+  DRAFT
+  PUBLISHED
+  DEPRECATED
+}
+
+/// Governs when a deployment may transition to COMPLETED.
+enum CompletionPolicy {
+  ALL_ITEMS // every non-deleted item must be checked
+  ALL_REQUIRED // only items flagged isRequired
+  MANUAL // no gate; permission alone decides
+}
+
+/// Deployment run state machine. Transitions are declared in code
+/// (src/features/deployments/domain/state-machine.ts), not here.
+enum DeploymentStatus {
+  DRAFT
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+  FAILED
+  CANCELLED
+  ROLLED_BACK
+}
+
+enum AttachmentScope {
+  DEPLOYMENT
+  COMMENT
+  PROJECT
+  CHECKLIST_ITEM
+}
+
+enum OutboxStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  DEAD
+}
+
+enum NotificationChannelKind {
+  EMAIL
+  SLACK
+  TEAMS
+  WEBHOOK
+}
+
+// ===========================================================================
+//  TENANCY & SETTINGS
+// ===========================================================================
+
+/// Single row today (seeded). Present so every query is already org-scoped and
+/// real multi-tenancy is a feature flag rather than a migration.
+model Organization {
+  id       String  @id @default(auto()) @map("_id") @db.ObjectId
+  slug     String  @unique
+  name     String
+  logoKey  String? // storage key, NOT a URL — resolved by the storage provider
+  isActive Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  settings      Setting?
+  users         User[]
+  roles         Role[]
+  projects      Project[]
+  templates     ChecklistTemplate[]
+  environments  Environment[]
+  deployments   DeploymentRun[]
+  invitations   Invitation[]
+  auditLogs     AuditLog[]
+  notifications NotificationOutbox[]
+
+  @@map("organizations")
+}
+
+/// Org-level configuration. Secrets are stored as AES-256-GCM ciphertext and
+/// are never returned by any API — see src/lib/crypto/secret-box.ts.
+model Setting {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @unique @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  // Branding
+  companyName    String
+  supportEmail   String?
+  logoKey        String?
+  faviconKey     String?
+  primaryColor   String  @default("#4fc7e8")
+  defaultTheme   String  @default("dark") // dark | light | system
+  allowUserTheme Boolean @default(true)
+
+  // Localisation
+  timezone   String @default("UTC") // IANA zone; all timestamps stored UTC
+  dateFormat String @default("dd MMM yyyy")
+  locale     String @default("en")
+
+  // Sessions & auth policy
+  sessionTimeoutMinutes  Int     @default(480)
+  sessionAbsoluteHours   Int     @default(720)
+  inviteExpiryHours      Int     @default(72)
+  passwordResetTtlMinute Int     @default(30)
+  passwordMinLength      Int     @default(12)
+  passwordRequireMixed   Boolean @default(true)
+  maxFailedLogins        Int     @default(10)
+  lockoutMinutes         Int     @default(15)
+  enforceMfa             Boolean @default(false) // reserved
+
+  // Email transport — provider is swappable; see docs/08
+  emailProvider   String  @default("gmail") // gmail | smtp | resend | ses | console
+  emailFromName   String?
+  emailFromAddr   String?
+  emailReplyTo    String?
+  smtpHost        String?
+  smtpPort        Int?
+  smtpSecure      Boolean @default(true)
+  smtpUsername    String?
+  smtpSecretRef   String? // ciphertext envelope, never plaintext
+  emailApiKeyRef  String? // ciphertext envelope for Resend/SES/etc.
+  emailEnabled    Boolean @default(true)
+  emailDailyCap   Int     @default(400) // Gmail SMTP practical ceiling
+  emailRetryLimit Int     @default(5)
+
+  // Storage
+  storageProvider  String   @default("local") // local | s3 | azure | gcs | vercel-blob
+  storageBucket    String?
+  storageRegion    String?
+  storagePrefix    String   @default("uploads")
+  maxUploadMb      Int      @default(25)
+  allowedMimeTypes String[] @default(["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/plain", "text/csv", "application/zip", "application/json"])
+
+  // Retention & compliance
+  auditRetentionDays  Int     @default(0) // 0 = keep forever
+  auditImmutable      Boolean @default(true)
+  requireSeparateApprover Boolean @default(false) // reserved for approvals
+
+  // Feature flags — string map so ops can flip behaviour without a deploy
+  featureFlags Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+/// Deployment targets. A collection, not an enum, because the requirement is
+/// explicitly "should be configurable".
+model Environment {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  key         String // development | qa | uat | staging | production
+  name        String
+  description String?
+  color       String  @default("#7d8ba3")
+  order       Int     @default(0)
+
+  /// Production-like environments can require extra permission / approvals.
+  isProduction   Boolean @default(false)
+  requiresApprove Boolean @default(false)
+  isActive       Boolean @default(true)
+
+  createdById String?   @db.ObjectId
+  updatedById String?   @db.ObjectId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  deployments DeploymentRun[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId, isActive, order])
+  @@map("environments")
+}
+
+// ===========================================================================
+//  IDENTITY & ACCESS
+// ===========================================================================
+
+model User {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  email         String  @unique // stored lowercased
+  name          String
+  avatarKey     String?
+  jobTitle      String?
+  passwordHash  String? // null until an invite is accepted
+  status        UserStatus @default(INVITED)
+
+  /// Global (org-wide) roles. Project-scoped roles live on Membership.
+  roleIds String[] @db.ObjectId
+
+  timezone String?
+  theme    String? // overrides Setting.defaultTheme when allowed
+  locale   String?
+
+  /// Bumped on password change, deactivation, or role change. Any JWT issued
+  /// with a lower epoch is rejected — this is our instant-revocation lever.
+  sessionEpoch Int @default(1)
+
+  lastLoginAt      DateTime?
+  lastLoginIp      String?
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  passwordChangedAt DateTime?
+
+  invitedById String?   @db.ObjectId
+  createdById String?   @db.ObjectId
+  updatedById String?   @db.ObjectId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  memberships        Membership[]
+  comments           DeploymentComment[]
+  uploadedAttachments Attachment[]
+  sentInvitations    Invitation[]        @relation("InvitedBy")
+  authTokens         AuthToken[]
+
+  @@index([organizationId, status, name])
+  @@index([organizationId, deletedAt])
+  @@index([email, deletedAt])
+  @@map("users")
+}
+
+/// Roles are DATA. Permission strings are a code-declared catalog
+/// (src/lib/authz/permissions.ts) that is seeded into PermissionDefinition so
+/// the admin UI can render it. Adding "QA" or "Release Manager" needs no code.
+model Role {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  key         String // admin | developer | qa | devops | release-manager | ...
+  name        String
+  description String?
+  color       String  @default("#4fc7e8")
+
+  /// Flat permission strings, e.g. "deployment.create", "project.*".
+  permissions String[]
+
+  /// Scope this role can be granted at.
+  isAssignableGlobally Boolean @default(true)
+  isAssignableOnProject Boolean @default(true)
+
+  /// System roles cannot be deleted and their key cannot change.
+  isSystem Boolean @default(false)
+  /// Exactly one role should be flagged as the bootstrap super-role.
+  isSuperAdmin Boolean @default(false)
+  isDefault    Boolean @default(false) // pre-selected in the invite form
+
+  createdById String?   @db.ObjectId
+  updatedById String?   @db.ObjectId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  memberships Membership[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId, deletedAt])
+  @@map("roles")
+}
+
+/// Rendered from the code catalog on boot so the admin role editor can group
+/// and describe permissions without hardcoding a list in the UI.
+model PermissionDefinition {
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  key         String  @unique // "deployment.complete"
+  group       String // "Deployments"
+  label       String
+  description String?
+  /// Permissions that only make sense org-wide (e.g. "settings.manage").
+  globalOnly  Boolean @default(false)
+  isDangerous Boolean @default(false)
+  order       Int     @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@index([group, order])
+  @@map("permission_definitions")
+}
+
+/// Project-scoped role grant. A user can be a Developer on Apex and a Release
+/// Manager on Elevate. Effective permissions = global ∪ project grants.
+model Membership {
+  id             String @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String @db.ObjectId
+
+  userId String @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id])
+
+  projectId String  @db.ObjectId
+  project   Project @relation(fields: [projectId], references: [id])
+
+  roleId String @db.ObjectId
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  createdById String?   @db.ObjectId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([userId, projectId, roleId])
+  @@index([projectId, deletedAt])
+  @@index([userId, deletedAt])
+  @@map("memberships")
+}
+
+/// Invite-only onboarding. The raw token is emailed once and never stored —
+/// only its SHA-256 hash.
+model Invitation {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  email String // lowercased
+  name  String?
+
+  roleIds String[] @db.ObjectId
+
+  /// Project grants to apply on acceptance: [{ projectId, roleId }]
+  projectGrants Json?
+
+  tokenHash String   @unique
+  expiresAt DateTime
+  status    InvitationStatus @default(PENDING)
+
+  message    String? // optional personal note included in the email
+  sentCount  Int     @default(0)
+  lastSentAt DateTime?
+
+  acceptedAt   DateTime?
+  acceptedIp   String?
+  revokedAt    DateTime?
+  revokedById  String?   @db.ObjectId
+  createdUserId String?  @db.ObjectId
+
+  invitedById String @db.ObjectId
+  invitedBy   User   @relation("InvitedBy", fields: [invitedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, status, createdAt(sort: Desc)])
+  @@index([email, status])
+  @@index([expiresAt])
+  @@map("invitations")
+}
+
+/// Single-use, hashed, TTL'd tokens for password reset and email change.
+/// Invite tokens live on Invitation because they carry more payload.
+model AuthToken {
+  id     String        @id @default(auto()) @map("_id") @db.ObjectId
+  type   AuthTokenType
+  userId String        @db.ObjectId
+  user   User          @relation(fields: [userId], references: [id])
+
+  tokenHash String    @unique
+  expiresAt DateTime
+  consumedAt DateTime?
+  payload   Json? // e.g. { newEmail } for EMAIL_CHANGE
+
+  requestIp String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, type, consumedAt])
+  // No @@index([expiresAt]) — the TTL index created by
+  // prisma/migrations-data/0001-create-ttl-indexes.ts owns that key. MongoDB
+  // rejects a plain and a TTL index on the same single field (error 85), and the
+  // TTL index serves range queries on expiresAt anyway.
+  @@map("auth_tokens")
+}
+
+// ===========================================================================
+//  PROJECTS
+// ===========================================================================
+
+model Project {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  key         String // short code used in UI + version strings, e.g. "APEX"
+  slug        String
+  name        String
+  description String?
+  color       String        @default("#4fc7e8")
+  status      ProjectStatus @default(ACTIVE)
+
+  repositoryUrl String?
+  docsUrl       String?
+  /// Restrict which environments this project may deploy to. Empty = all.
+  environmentIds String[] @db.ObjectId
+
+  /// Denormalised counters kept in step by DeploymentService — the history and
+  /// dashboard lists must not aggregate per row.
+  deploymentCount   Int       @default(0)
+  lastDeploymentAt  DateTime?
+  lastDeploymentEnv String?
+
+  createdById String    @db.ObjectId
+  updatedById String?   @db.ObjectId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  deletedById String?   @db.ObjectId
+
+  /// Lowercased "name key description" for the regex search fallback used when
+  /// Atlas Search is unavailable. See docs/11.
+  searchText String?
+
+  memberships Membership[]
+  templates   ProjectTemplate[]
+  deployments DeploymentRun[]
+  attachments Attachment[]
+
+  @@unique([organizationId, key])
+  @@unique([organizationId, slug])
+  @@index([organizationId, status, name])
+  @@index([organizationId, deletedAt, updatedAt(sort: Desc)])
+  @@index([organizationId, searchText])
+  @@map("projects")
+}
+
+// ===========================================================================
+//  CHECKLIST TEMPLATES  (versioned; sections + items are embedded)
+// ---------------------------------------------------------------------------
+//  Sections and items are embedded in TemplateVersion rather than living in
+//  their own collections because they have no independent lifecycle, are always
+//  loaded with their parent, are bounded (tens, not millions), and reordering
+//  becomes a single atomic array write instead of an N-document update.
+//  Soft delete still works: `deletedAt` on the embedded document, with restore.
+//
+//  If checklist items ever become independently reusable across templates
+//  (an "item library"), promote them to a collection and keep a `catalogItemId`
+//  pointer here — the snapshot layer means no deployment is affected.
+// ===========================================================================
+
+type TemplateItem {
+  /// Stable nanoid, preserved across versions so lineage and analytics work.
+  id       String
+  key      String? // optional business key, e.g. "sonar-passed"
+  label    String
+  helpText String?
+  order    Int
+
+  isRequired       Boolean @default(true)
+  /// Item cannot be checked without a note or attachment.
+  evidenceRequired Boolean @default(false)
+  /// Display-only hint: which role usually owns this item.
+  ownerRoleKey     String?
+  /// Restrict this item to specific environments. Empty = all.
+  environmentKeys  String[]
+  /// Free-form extension point (links, external check ids, weights).
+  metadata         Json?
+
+  deletedAt DateTime?
+}
+
+type TemplateSection {
+  id          String
+  key         String?
+  title       String
+  description String?
+  order       Int
+  items       TemplateItem[]
+
+  deletedAt DateTime?
+}
+
+/// Logical template container. Stable identity across versions.
+model ChecklistTemplate {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  key         String
+  name        String
+  description String?
+  color       String  @default("#35d68f")
+  isActive    Boolean @default(true)
+
+  /// Pointer to the version served to new deployments.
+  currentVersionId String? @db.ObjectId
+  currentVersion   Int     @default(0)
+  /// Highest version number ever allocated (monotonic; survives deletes).
+  versionCounter   Int     @default(0)
+
+  createdById String    @db.ObjectId
+  updatedById String?   @db.ObjectId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  deletedById String?   @db.ObjectId
+
+  searchText String?
+
+  versions TemplateVersion[]
+  projects ProjectTemplate[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId, isActive, name])
+  @@index([organizationId, deletedAt])
+  @@map("checklist_templates")
+}
+
+/// An immutable-once-PUBLISHED revision of a template's content.
+/// Editing a published version is forbidden; the service clones it to a DRAFT.
+model TemplateVersion {
+  id             String @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String @db.ObjectId
+
+  templateId String            @db.ObjectId
+  template   ChecklistTemplate @relation(fields: [templateId], references: [id])
+
+  version     Int
+  status      TemplateVersionStatus @default(DRAFT)
+  changeNote  String?
+  sections    TemplateSection[]
+
+  completionPolicy CompletionPolicy @default(ALL_REQUIRED)
+  /// Cached rollups so template lists never walk the embedded arrays.
+  sectionCount     Int              @default(0)
+  itemCount        Int              @default(0)
+  requiredCount    Int              @default(0)
+
+  publishedAt   DateTime?
+  publishedById String?   @db.ObjectId
+  deprecatedAt  DateTime?
+
+  /// Version this draft was cloned from — powers the version diff view.
+  clonedFromVersionId String? @db.ObjectId
+
+  createdById String    @db.ObjectId
+  updatedById String?   @db.ObjectId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([templateId, version])
+  @@index([organizationId, status, updatedAt(sort: Desc)])
+  @@index([templateId, status, version(sort: Desc)])
+  @@map("template_versions")
+}
+
+/// Explicit many-to-many join so the link itself can carry metadata.
+model ProjectTemplate {
+  id             String @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String @db.ObjectId
+
+  projectId String  @db.ObjectId
+  project   Project @relation(fields: [projectId], references: [id])
+
+  templateId String            @db.ObjectId
+  template   ChecklistTemplate @relation(fields: [templateId], references: [id])
+
+  /// Pre-selected template in the "new deployment" form for this project.
+  isDefault Boolean @default(false)
+  /// Limit this pairing to certain environments. Empty = all.
+  environmentKeys String[]
+  order     Int     @default(0)
+
+  createdById String    @db.ObjectId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([projectId, templateId])
+  @@index([projectId, deletedAt, order])
+  @@index([templateId, deletedAt])
+  @@map("project_templates")
+}
+
+// ===========================================================================
+//  DEPLOYMENT RUNS  (immutable snapshot + separate mutable state)
+// ===========================================================================
+
+type SnapshotItem {
+  id               String
+  label            String
+  helpText         String?
+  order            Int
+  isRequired       Boolean
+  evidenceRequired Boolean
+  ownerRoleKey     String?
+  metadata         Json?
+  /// Lineage back to TemplateItem.id — for analytics like "which item blocks
+  /// releases most often". Never used to read live template data.
+  sourceItemId     String
+}
+
+type SnapshotSection {
+  id            String
+  title         String
+  description   String?
+  order         Int
+  items         SnapshotItem[]
+  sourceSectionId String
+}
+
+/// Frozen copy of the template content at run-creation time. Nothing in the
+/// execution path ever reads TemplateVersion — that is the whole point.
+type ChecklistSnapshot {
+  templateId        String
+  templateVersionId String
+  templateKey       String
+  templateName      String
+  version           Int
+  completionPolicy  CompletionPolicy
+  capturedAt        DateTime
+  sections          SnapshotSection[]
+}
+
+model DeploymentRun {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  /// Human-facing sequential id per project, e.g. APEX-142.
+  reference String
+  sequence  Int
+
+  projectId String  @db.ObjectId
+  project   Project @relation(fields: [projectId], references: [id])
+
+  templateId        String @db.ObjectId
+  templateVersionId String @db.ObjectId
+  checklist         ChecklistSnapshot
+
+  environmentId   String      @db.ObjectId
+  environment     Environment @relation(fields: [environmentId], references: [id])
+  /// Denormalised so history stays readable if an environment is renamed.
+  environmentKey  String
+  environmentName String
+  isProduction    Boolean     @default(false)
+
+  version      String // release version, e.g. "2.14.0"
+  title        String?
+  releaseNotes String? // markdown
+  scheduledAt  DateTime?
+
+  status DeploymentStatus @default(DRAFT)
+
+  /// Counters maintained atomically alongside ChecklistItemState writes so the
+  /// history grid and dashboard never aggregate.
+  totalItems        Int @default(0)
+  totalRequired     Int @default(0)
+  completedItems    Int @default(0)
+  completedRequired Int @default(0)
+  commentCount      Int @default(0)
+  attachmentCount   Int @default(0)
+
+  startedAt   DateTime?
+  startedById String?   @db.ObjectId
+  startedByName String?
+
+  completedAt   DateTime?
+  completedById String?   @db.ObjectId
+  completedByName String?
+
+  cancelledAt   DateTime?
+  cancelledById String?   @db.ObjectId
+  cancelReason  String?
+
+  failedAt      DateTime?
+  failedById    String?   @db.ObjectId
+  failureReason String?
+
+  rolledBackAt   DateTime?
+  rolledBackById String?   @db.ObjectId
+  rollbackReason String?
+  /// Set when this run is the rollback of another run.
+  rollbackOfId   String?   @db.ObjectId
+
+  /// startedAt → terminal state, in ms. Written once on transition.
+  durationMs Int?
+
+  createdById String    @db.ObjectId
+  updatedById String?   @db.ObjectId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  deletedById String?   @db.ObjectId
+
+  searchText String?
+
+  itemStates  ChecklistItemState[]
+  comments    DeploymentComment[]
+  attachments Attachment[]
+
+  @@unique([projectId, sequence])
+  @@index([organizationId, status, createdAt(sort: Desc)])
+  @@index([organizationId, projectId, status, createdAt(sort: Desc)])
+  @@index([organizationId, environmentKey, createdAt(sort: Desc)])
+  @@index([organizationId, deletedAt, createdAt(sort: Desc)])
+  @@index([organizationId, completedAt(sort: Desc)])
+  @@index([projectId, version])
+  @@index([startedById, createdAt(sort: Desc)])
+  @@index([organizationId, searchText])
+  @@map("deployment_runs")
+}
+
+/// One document per snapshot item per run — created up front with createMany.
+///
+/// Kept out of the embedded snapshot on purpose: two people ticking different
+/// items at the same moment must not clobber each other, and Prisma can only
+/// rewrite a composite list wholesale. A tiny document per item gives us
+/// per-item atomic writes, optimistic concurrency, and per-item audit.
+model ChecklistItemState {
+  id             String @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String @db.ObjectId
+
+  deploymentId String        @db.ObjectId
+  deployment   DeploymentRun @relation(fields: [deploymentId], references: [id])
+
+  sectionId String // snapshot section id
+  itemId    String // snapshot item id
+  order     Int
+  isRequired Boolean @default(true)
+
+  checked       Boolean   @default(false)
+  checkedAt     DateTime?
+  checkedById   String?   @db.ObjectId
+  checkedByName String?
+
+  /// Evidence
+  note          String?
+  attachmentIds String[] @db.ObjectId
+
+  /// Not applicable for this run (e.g. no schema change) — excluded from gates.
+  skipped       Boolean @default(false)
+  skipReason    String?
+
+  /// Optimistic concurrency guard; the toggle mutation asserts on it.
+  revision Int @default(0)
+  toggleCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([deploymentId, itemId])
+  @@index([deploymentId, sectionId, order])
+  @@index([deploymentId, checked])
+  @@index([organizationId, itemId, checked]) // "which items block us most"
+  @@map("checklist_item_states")
+}
+
+model DeploymentComment {
+  id             String @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String @db.ObjectId
+
+  deploymentId String        @db.ObjectId
+  deployment   DeploymentRun @relation(fields: [deploymentId], references: [id])
+
+  authorId   String @db.ObjectId
+  author     User   @relation(fields: [authorId], references: [id])
+  /// Denormalised so comments stay attributable after a user is deactivated.
+  authorName String
+
+  /// Raw markdown. Rendered and sanitised at read time — never store HTML.
+  body String
+
+  /// Optional pin to a specific checklist item.
+  itemId    String?
+  parentId  String? @db.ObjectId // one level of threading
+  mentions  String[] @db.ObjectId
+
+  editedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedById String? @db.ObjectId
+
+  attachments Attachment[]
+
+  @@index([deploymentId, deletedAt, createdAt])
+  @@index([authorId, createdAt(sort: Desc)])
+  @@map("deployment_comments")
+}
+
+/// Provider-agnostic file metadata. We store `provider` + `key`, never a URL,
+/// so the storage backend can be swapped without touching a single row.
+model Attachment {
+  id             String @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String @db.ObjectId
+
+  scope AttachmentScope
+
+  deploymentId String?        @db.ObjectId
+  deployment   DeploymentRun? @relation(fields: [deploymentId], references: [id])
+  commentId    String?        @db.ObjectId
+  comment      DeploymentComment? @relation(fields: [commentId], references: [id])
+  projectId    String?        @db.ObjectId
+  project      Project?       @relation(fields: [projectId], references: [id])
+  itemId       String? // snapshot item id when scope = CHECKLIST_ITEM
+
+  provider    String // local | s3 | azure | gcs | vercel-blob
+  storageKey  String
+  fileName    String
+  contentType String
+  /// Sniffed from magic bytes server-side, not taken from the client.
+  detectedType String?
+  sizeBytes   Int
+  checksum    String? // sha256, for dedupe and integrity
+
+  width  Int?
+  height Int?
+  /// null = unscanned, "clean" | "infected" | "error"
+  scanStatus String?
+  scanAt     DateTime?
+
+  uploadedById String @db.ObjectId
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  /// Set when the object has actually been removed from the provider.
+  purgedAt  DateTime?
+
+  @@index([deploymentId, deletedAt])
+  @@index([commentId, deletedAt])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([provider, purgedAt]) // orphan reaper
+  @@index([checksum])
+  @@map("attachments")
+}
+
+// ===========================================================================
+//  AUDIT
+// ---------------------------------------------------------------------------
+//  Append-only. No update or delete path exists in application code, and the
+//  runtime DB user is granted insert/find only on this collection.
+//  `action` is a String, not an enum, so new domain events never require a
+//  schema change — the catalog lives in src/lib/audit/actions.ts.
+// ===========================================================================
+
+model AuditLog {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  action String // "deployment.item.checked", "template.published", ...
+
+  /// Actor — denormalised so history survives user deletion/rename.
+  actorId    String? @db.ObjectId
+  actorEmail String?
+  actorName  String?
+  actorRoles String[]
+  /// "user" | "system" | "api-key" | "cron"
+  actorType  String  @default("user")
+
+  entityType String // "DeploymentRun" | "Project" | "TemplateVersion" | ...
+  entityId   String?
+  entityLabel String? // human-readable snapshot, e.g. "APEX-142"
+
+  /// Denormalised scope keys so the timeline views are single-index lookups.
+  projectId    String? @db.ObjectId
+  deploymentId String? @db.ObjectId
+  templateId   String? @db.ObjectId
+  targetUserId String? @db.ObjectId
+
+  /// [{ field, from, to }] — sensitive fields redacted by the differ.
+  changes  Json?
+  /// Anything else worth keeping (reason strings, counts, external ids).
+  metadata Json?
+  summary  String? // pre-rendered sentence for the activity feed
+
+  ip         String?
+  userAgent  String?
+  requestId  String?
+  /// Groups every log line written by one request/transaction.
+  correlationId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([organizationId, entityType, entityId, createdAt(sort: Desc)])
+  @@index([organizationId, actorId, createdAt(sort: Desc)])
+  @@index([organizationId, projectId, createdAt(sort: Desc)])
+  @@index([deploymentId, createdAt])
+  @@index([organizationId, action, createdAt(sort: Desc)])
+  @@index([correlationId])
+  @@map("audit_logs")
+}
+
+// ===========================================================================
+//  NOTIFICATION OUTBOX  (transactional outbox — see docs/08)
+// ===========================================================================
+
+model NotificationOutbox {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  channel  NotificationChannelKind @default(EMAIL)
+  provider String? // resolved at send time; recorded for forensics
+
+  /// Template identifier, e.g. "user-invite", "deployment-completed".
+  templateKey String
+  /// Validated props for the renderer.
+  payload     Json
+
+  toAddresses  String[]
+  ccAddresses  String[]
+  bccAddresses String[]
+  subject      String?
+
+  /// Natural key for at-most-once delivery. Unique — a duplicate enqueue is a
+  /// no-op rather than a second email.
+  idempotencyKey String @unique
+
+  status      OutboxStatus @default(PENDING)
+  attempts    Int          @default(0)
+  maxAttempts Int          @default(5)
+  /// Exponential backoff target; the worker claims rows where this has passed.
+  nextAttemptAt DateTime  @default(now())
+  lockedAt      DateTime?
+  lockedBy      String?
+
+  sentAt       DateTime?
+  providerMessageId String?
+  lastError    String?
+
+  relatedEntityType String?
+  relatedEntityId   String? @db.ObjectId
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([organizationId, status, createdAt(sort: Desc)])
+  @@index([relatedEntityType, relatedEntityId])
+  @@map("notification_outbox")
+}
+
+// ===========================================================================
+//  INFRASTRUCTURE SUPPORT
+// ===========================================================================
+
+/// Mongo-backed fixed-window rate limiter. Used when no Redis is configured —
+/// in-process counters are useless on serverless. A TTL index on `expiresAt`
+/// is created by the migration runner (Prisma cannot express TTL).
+model RateLimit {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  /// "login:user@x.com", "invite:<userId>", "api:<ip>:<route>"
+  bucketKey String   @unique
+  count     Int      @default(0)
+  windowStartedAt DateTime @default(now())
+  expiresAt DateTime
+
+  // expiresAt is indexed by the TTL migration — see AuthToken above.
+  @@map("rate_limits")
+}
+
+/// Ledger for our own data migrations, since `prisma migrate` is unavailable on
+/// MongoDB. The runner applies pending scripts in order, once, under a lock.
+model DataMigration {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique // "0007-backfill-search-text"
+  checksum    String
+  appliedAt   DateTime @default(now())
+  durationMs  Int
+  appliedBy   String?
+
+  @@map("data_migrations")
+}
+
+/// Distributed lock for cron/worker singletons (outbox drain, rollups, reaper).
+model JobLock {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  name       String   @unique
+  holder     String
+  acquiredAt DateTime @default(now())
+  expiresAt  DateTime
+
+  // expiresAt is indexed by the TTL migration — see AuthToken above.
+  @@map("job_locks")
+}
+
+/// Pre-aggregated dashboard rollups. Written by a nightly job plus incremental
+/// updates on terminal transitions; read by the dashboard instead of running
+/// aggregation pipelines on every page view. See docs/11.
+model DeploymentDailyStat {
+  id             String @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String @db.ObjectId
+
+  /// UTC midnight bucket.
+  day       DateTime
+  projectId String?  @db.ObjectId
+  environmentKey String?
+
+  created    Int @default(0)
+  started    Int @default(0)
+  completed  Int @default(0)
+  failed     Int @default(0)
+  cancelled  Int @default(0)
+  rolledBack Int @default(0)
+
+  itemsChecked      Int @default(0)
+  totalDurationMs   Int @default(0)
+  completedWithDuration Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, day, projectId, environmentKey])
+  @@index([organizationId, day(sort: Desc)])
+  @@map("deployment_daily_stats")
+}
