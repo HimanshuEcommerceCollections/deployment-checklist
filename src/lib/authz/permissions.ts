@@ -204,6 +204,7 @@ export const WILDCARD = '*' as const
 export type Grant = Permission | typeof WILDCARD | `${string}.${typeof WILDCARD}`
 
 export const ALL_PERMISSION_KEYS: readonly string[] = PERMISSION_DEFINITIONS.map((p) => p.key)
+export const ALL_PERMISSIONS: readonly string[] = ALL_PERMISSION_KEYS
 
 const KEY_SET = new Set(ALL_PERMISSION_KEYS)
 
