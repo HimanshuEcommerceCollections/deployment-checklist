@@ -1,21 +1,25 @@
 import { getDeployment } from '@/features/deployments/actions/deployments.actions'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { notFound } from 'next/navigation'
 import { DeploymentChecklistItems } from '@/features/deployments/components/deployment-checklist-items'
 import { DeploymentComments } from '@/features/deployments/components/deployment-comments'
 
-export default async function DeploymentPage({
-  params,
-}: {
-  params: { id: string; deploymentId: string }
+export default async function DeploymentPage(props: {
+  params: Promise<{ id: string; deploymentId: string }>
 }) {
-  const deployment = await getDeployment(params.deploymentId).catch(() => null)
+  const params = await props.params
+  let deployment: any
+  try {
+    deployment = await getDeployment(params.deploymentId)
+  } catch {
+    notFound()
+  }
 
   if (!deployment) notFound()
 
-  const checkedCount = deployment.items?.filter((i: any) => i.checked).length || 0
+  const checkedCount = deployment.items?.filter((i: any) => i.checked)?.length || 0
   const totalCount = deployment.items?.length || 0
   const progress = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 0
 

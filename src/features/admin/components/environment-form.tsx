@@ -15,8 +15,9 @@ interface EnvironmentFormProps {
 export function EnvironmentForm({ environment }: EnvironmentFormProps) {
   const router = useRouter()
   const isCreate = !environment
-  const action = isCreate
-    ? async (formData: FormData) => {
+
+  const formAction = isCreate
+    ? async (_: any, formData: FormData) => {
         const result = await createEnvironment({
           name: formData.get('name'),
           key: formData.get('key'),
@@ -27,7 +28,7 @@ export function EnvironmentForm({ environment }: EnvironmentFormProps) {
         if (result.ok) router.push('/admin/environments')
         return result
       }
-    : async (formData: FormData) => {
+    : async (_: any, formData: FormData) => {
         const result = await updateEnvironment(environment!.id, {
           name: formData.get('name'),
           key: formData.get('key'),
@@ -39,7 +40,7 @@ export function EnvironmentForm({ environment }: EnvironmentFormProps) {
         return result
       }
 
-  const [state, , pending] = useActionState(action, null)
+  const [state, action, pending] = useActionState(formAction, null)
 
   return (
     <form action={action} className="space-y-4">

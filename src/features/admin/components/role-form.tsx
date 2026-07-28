@@ -17,8 +17,9 @@ interface RoleFormProps {
 export function RoleForm({ role }: RoleFormProps) {
   const router = useRouter()
   const isCreate = !role
-  const action = isCreate
-    ? async (formData: FormData) => {
+
+  const formAction = isCreate
+    ? async (_: any, formData: FormData) => {
         const permissions = Array.from(formData.getAll('permissions'))
         const result = await createRole({
           name: formData.get('name'),
@@ -30,7 +31,7 @@ export function RoleForm({ role }: RoleFormProps) {
         if (result.ok) router.push('/admin/roles')
         return result
       }
-    : async (formData: FormData) => {
+    : async (_: any, formData: FormData) => {
         const permissions = Array.from(formData.getAll('permissions'))
         const result = await updateRole(role!.id, {
           name: formData.get('name'),
@@ -43,7 +44,7 @@ export function RoleForm({ role }: RoleFormProps) {
         return result
       }
 
-  const [state, , pending] = useActionState(action, null)
+  const [state, action, pending] = useActionState(formAction, null)
 
   return (
     <form action={action} className="space-y-6">

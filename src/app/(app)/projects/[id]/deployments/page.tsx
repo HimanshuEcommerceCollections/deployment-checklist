@@ -11,7 +11,8 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 
-export default async function DeploymentsPage({ params }: { params: { id: string } }) {
+export default async function DeploymentsPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
   const deployments = await listProjectDeployments(params.id)
 
   const statusColor = (status: string) => {

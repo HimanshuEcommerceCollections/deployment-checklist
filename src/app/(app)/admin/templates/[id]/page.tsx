@@ -6,9 +6,10 @@ import { notFound } from 'next/navigation'
 
 export const metadata = { title: 'Edit Template' }
 
-export default async function EditTemplatePage({ params }: { params: { id: string } }) {
+export default async function EditTemplatePage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
   const templates = await listTemplates()
-  const template = templates.find((t) => t.id === params.id)
+  const template = templates.find((t: any) => t.id === params.id)
 
   if (!template) notFound()
 

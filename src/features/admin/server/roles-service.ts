@@ -23,7 +23,7 @@ export class RolesService {
   }
 
   async createRole(ctx: RequestContext, input: CreateRoleInput) {
-    requirePermission(ctx, PERMISSIONS.role.create)
+    requirePermission(ctx, PERMISSIONS.role.manage)
 
     const role = await db.role.create({
       data: {
@@ -48,7 +48,7 @@ export class RolesService {
   }
 
   async updateRole(ctx: RequestContext, id: string, input: UpdateRoleInput) {
-    requirePermission(ctx, PERMISSIONS.role.edit)
+    requirePermission(ctx, PERMISSIONS.role.manage)
 
     const role = await db.role.update({
       where: { id },
@@ -72,7 +72,7 @@ export class RolesService {
   }
 
   async deleteRole(ctx: RequestContext, id: string) {
-    requirePermission(ctx, PERMISSIONS.role.delete)
+    requirePermission(ctx, PERMISSIONS.role.manage)
 
     const role = await db.role.update({
       where: { id },

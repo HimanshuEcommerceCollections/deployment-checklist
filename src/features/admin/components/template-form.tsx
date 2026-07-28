@@ -6,18 +6,19 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import type { Template } from '@prisma/client'
+import type { ChecklistTemplate } from '@prisma/client'
 import { createTemplate, updateTemplate } from '../actions/templates.actions'
 
 interface TemplateFormProps {
-  template?: Template
+  template?: ChecklistTemplate
 }
 
 export function TemplateForm({ template }: TemplateFormProps) {
   const router = useRouter()
   const isCreate = !template
-  const action = isCreate
-    ? async (formData: FormData) => {
+
+  const formAction = isCreate
+    ? async (_: any, formData: FormData) => {
         const result = await createTemplate({
           name: formData.get('name'),
           description: formData.get('description'),
@@ -25,7 +26,7 @@ export function TemplateForm({ template }: TemplateFormProps) {
         if (result.ok) router.push('/admin/templates')
         return result
       }
-    : async (formData: FormData) => {
+    : async (_: any, formData: FormData) => {
         const result = await updateTemplate(template!.id, {
           name: formData.get('name'),
           description: formData.get('description'),
@@ -34,7 +35,7 @@ export function TemplateForm({ template }: TemplateFormProps) {
         return result
       }
 
-  const [state, , pending] = useActionState(action, null)
+  const [state, action, pending] = useActionState(formAction, null)
 
   return (
     <form action={action} className="space-y-4">

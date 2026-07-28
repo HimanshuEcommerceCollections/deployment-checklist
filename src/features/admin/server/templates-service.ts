@@ -6,11 +6,11 @@ import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { db } from '@/lib/db/prisma'
 
-import type { CreateTemplateInput, UpdateTemplateInput, CreateSectionInput, CreateItemInput } from '../schemas/templates.schema'
+import type { CreateTemplateInput, UpdateTemplateInput } from '../schemas/templates.schema'
 
 export class TemplatesService {
   async listTemplates(ctx: RequestContext) {
-    return db.template.findMany({
+    return db.checklistTemplate.findMany({
       where: { organizationId: ctx.organizationId, deletedAt: null },
       include: { versions: { where: { deletedAt: null } } },
       orderBy: { name: 'asc' },
@@ -18,7 +18,7 @@ export class TemplatesService {
   }
 
   async getTemplate(ctx: RequestContext, id: string) {
-    return db.template.findFirstOrThrow({
+    return db.checklistTemplate.findFirstOrThrow({
       where: { id, organizationId: ctx.organizationId, deletedAt: null },
       include: { versions: { where: { deletedAt: null } } },
     })
@@ -27,7 +27,7 @@ export class TemplatesService {
   async createTemplate(ctx: RequestContext, input: CreateTemplateInput) {
     requirePermission(ctx, PERMISSIONS.template.manage)
 
-    const template = await db.template.create({
+    const template = await db.checklistTemplate.create({
       data: {
         organizationId: ctx.organizationId,
         name: input.name,
@@ -55,7 +55,7 @@ export class TemplatesService {
   async updateTemplate(ctx: RequestContext, id: string, input: UpdateTemplateInput) {
     requirePermission(ctx, PERMISSIONS.template.manage)
 
-    const template = await db.template.update({
+    const template = await db.checklistTemplate.update({
       where: { id },
       data: {
         name: input.name,
@@ -76,7 +76,7 @@ export class TemplatesService {
   async deleteTemplate(ctx: RequestContext, id: string) {
     requirePermission(ctx, PERMISSIONS.template.delete)
 
-    const template = await db.template.update({
+    const template = await db.checklistTemplate.update({
       where: { id },
       data: { deletedAt: new Date(), updatedById: ctx.actorId },
     })

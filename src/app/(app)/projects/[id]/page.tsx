@@ -2,12 +2,18 @@ import { getUserProject } from '@/features/projects/actions/projects.actions'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { notFound } from 'next/navigation'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export const metadata = { title: 'Project' }
 
-export default async function ProjectPage({ params }: { params: { id: string } }) {
-  const project = await getUserProject(params.id).catch(() => null)
+export default async function ProjectPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
+  let project: any
+  try {
+    project = await getUserProject(params.id)
+  } catch {
+    notFound()
+  }
 
   if (!project) notFound()
 

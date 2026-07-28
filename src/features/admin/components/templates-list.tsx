@@ -10,10 +10,10 @@ import {
 } from '@/components/ui/table'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import type { Template, TemplateVersion } from '@prisma/client'
+import type { ChecklistTemplate, TemplateVersion } from '@prisma/client'
 
 interface TemplatesListProps {
-  templates: (Template & { versions: TemplateVersion[] })[]
+  templates: (ChecklistTemplate & { versions: TemplateVersion[] })[]
 }
 
 export function TemplatesList({ templates }: TemplatesListProps) {

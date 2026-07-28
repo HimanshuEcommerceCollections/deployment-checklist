@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/prisma'
-import { requireAuth } from '@/lib/authz/authorize'
+import { getRequestContext } from '@/server/context'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { requirePermission } from '@/lib/authz/authorize'
 import {
@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 export const metadata = { title: 'Admin - Trash' }
 
 export default async function TrashPage() {
-  const ctx = await requireAuth()
+  const ctx = await getRequestContext()
   requirePermission(ctx, PERMISSIONS.admin.access)
 
   const [deletedProjects, deletedUsers, deletedTemplates] = await Promise.all([
@@ -27,7 +27,7 @@ export default async function TrashPage() {
       where: { deletedAt: { not: null } },
       take: 10,
     }),
-    db.template.findMany({
+    db.checklistTemplate.findMany({
       where: { organizationId: ctx.organizationId, deletedAt: { not: null } },
       take: 10,
     }),

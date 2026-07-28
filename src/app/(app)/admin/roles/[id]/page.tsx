@@ -6,9 +6,10 @@ import { notFound } from 'next/navigation'
 
 export const metadata = { title: 'Edit Role' }
 
-export default async function EditRolePage({ params }: { params: { id: string } }) {
+export default async function EditRolePage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
   const roles = await listRoles()
-  const role = roles.find((r) => r.id === params.id)
+  const role = roles.find((r: any) => r.id === params.id)
 
   if (!role) notFound()
 

@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/prisma'
-import { requireAuth } from '@/lib/authz/authorize'
+import { getRequestContext } from '@/server/context'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { requirePermission } from '@/lib/authz/authorize'
 import {
@@ -14,12 +14,11 @@ import {
 export const metadata = { title: 'Admin - Audit Log' }
 
 export default async function AuditPage() {
-  const ctx = await requireAuth()
+  const ctx = await getRequestContext()
   requirePermission(ctx, PERMISSIONS.audit.read)
 
   const entries = await db.auditLog.findMany({
     where: { organizationId: ctx.organizationId },
-    include: { actor: true },
     orderBy: { createdAt: 'desc' },
     take: 100,
   })
@@ -50,7 +49,7 @@ export default async function AuditPage() {
                   <TableCell className="text-sm text-gray-600">
                     {new Date(entry.createdAt).toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-sm">{entry.actor?.name}</TableCell>
+                  <TableCell className="text-sm">{entry.actorName}</TableCell>
                   <TableCell className="font-mono text-sm">{entry.action}</TableCell>
                   <TableCell className="text-sm">
                     {entry.entityType}

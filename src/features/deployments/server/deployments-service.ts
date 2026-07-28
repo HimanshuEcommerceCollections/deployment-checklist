@@ -12,7 +12,7 @@ export class DeploymentsService {
   async listProjectDeployments(ctx: RequestContext, projectId: string) {
     requirePermission(ctx, PERMISSIONS.deployment.read)
 
-    return db.deployment.findMany({
+    return db.deploymentRun.findMany({
       where: {
         projectId,
         project: {
@@ -21,7 +21,7 @@ export class DeploymentsService {
         },
         deletedAt: null,
       },
-      include: { template: true, environment: true, _count: { select: { items: true, comments: true } } },
+      include: { templateVersion: true, environment: true, _count: { select: { items: true, comments: true } } },
       orderBy: { createdAt: 'desc' },
     })
   }
@@ -29,7 +29,7 @@ export class DeploymentsService {
   async getDeployment(ctx: RequestContext, id: string) {
     requirePermission(ctx, PERMISSIONS.deployment.read)
 
-    return db.deployment.findFirstOrThrow({
+    return db.deploymentRun.findFirstOrThrow({
       where: {
         id,
         project: {
@@ -39,7 +39,7 @@ export class DeploymentsService {
         deletedAt: null,
       },
       include: {
-        template: true,
+        templateVersion: true,
         environment: true,
         items: { where: { deletedAt: null }, orderBy: { order: 'asc' } },
         comments: { where: { deletedAt: null }, include: { author: true }, orderBy: { createdAt: 'desc' } },
@@ -50,10 +50,10 @@ export class DeploymentsService {
   async createDeployment(ctx: RequestContext, input: CreateDeploymentInput) {
     requirePermission(ctx, PERMISSIONS.deployment.create)
 
-    const deployment = await db.deployment.create({
+    const deployment = await db.deploymentRun.create({
       data: {
         projectId: input.projectId,
-        templateId: input.templateVersionId.split('_')[0],
+        templateVersionId: input.templateVersionId,
         environmentId: input.environment,
         title: input.title,
         releaseNotes: input.releaseNotes,
@@ -79,7 +79,7 @@ export class DeploymentsService {
   async updateDeploymentItem(ctx: RequestContext, deploymentId: string, itemId: string, input: UpdateDeploymentItemInput) {
     requirePermission(ctx, PERMISSIONS.deployment.execute)
 
-    const item = await db.deploymentItem.update({
+    const item = await db.checklistItemState.update({
       where: { id: itemId },
       data: {
         checked: input.checked,
@@ -103,7 +103,7 @@ export class DeploymentsService {
 
     const comment = await db.deploymentComment.create({
       data: {
-        deploymentId,
+        deploymentRunId: deploymentId,
         authorId: ctx.actorId,
         content: input.content,
       },
