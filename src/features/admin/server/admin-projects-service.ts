@@ -12,7 +12,7 @@ export class AdminProjectsService {
 
     return db.project.findMany({
       where: { organizationId: ctx.organizationId, deletedAt: null },
-      include: { _count: { select: { members: true, deployments: true } } },
+      include: { _count: { select: { memberships: true, deployments: true } } },
       orderBy: { name: 'asc' },
     })
   }

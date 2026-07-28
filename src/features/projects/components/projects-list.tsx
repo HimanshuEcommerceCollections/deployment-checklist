@@ -11,7 +11,7 @@ import {
 import type { Project } from '@prisma/client'
 
 interface ProjectsListProps {
-  projects: (Project & { environments: any[]; _count: { members: number; deployments: number } })[]
+  projects: (Project & { environments: any[]; _count: { memberships: number; deployments: number } })[]
 }
 
 export function ProjectsList({ projects }: ProjectsListProps) {
@@ -46,7 +46,7 @@ export function ProjectsList({ projects }: ProjectsListProps) {
               <div className="flex gap-4 text-sm text-gray-600">
                 <span>{project.environments.length} environment(s)</span>
                 <span>{project._count.deployments} deployment(s)</span>
-                <span>{project._count.members} member(s)</span>
+                <span>{project._count.memberships} member(s)</span>
               </div>
             </CardContent>
           </Card>

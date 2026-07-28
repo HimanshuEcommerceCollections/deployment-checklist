@@ -21,7 +21,7 @@ export class ProjectsService {
       },
       include: {
         environments: { where: { deletedAt: null }, take: 3 },
-        _count: { select: { members: true, deployments: true } },
+        _count: { select: { memberships: true, deployments: true } },
       },
       orderBy: { createdAt: 'desc' },
     })

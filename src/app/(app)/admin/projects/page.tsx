@@ -43,7 +43,7 @@ export default async function AdminProjectsPage() {
               {projects.map((project: any) => (
                 <TableRow key={project.id}>
                   <TableCell className="font-medium">{project.name}</TableCell>
-                  <TableCell>{project._count.members}</TableCell>
+                  <TableCell>{project._count.memberships}</TableCell>
                   <TableCell>{project._count.deployments}</TableCell>
                   <TableCell>
                     <Link href={`/admin/projects/${project.id}`}>
