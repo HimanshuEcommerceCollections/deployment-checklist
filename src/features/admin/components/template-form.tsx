@@ -1,0 +1,80 @@
+'use client'
+
+import { useActionState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import type { Template } from '@prisma/client'
+import { createTemplate, updateTemplate } from '../actions/templates.actions'
+
+interface TemplateFormProps {
+  template?: Template
+}
+
+export function TemplateForm({ template }: TemplateFormProps) {
+  const router = useRouter()
+  const isCreate = !template
+  const action = isCreate
+    ? async (formData: FormData) => {
+        const result = await createTemplate({
+          name: formData.get('name'),
+          description: formData.get('description'),
+        })
+        if (result.ok) router.push('/admin/templates')
+        return result
+      }
+    : async (formData: FormData) => {
+        const result = await updateTemplate(template!.id, {
+          name: formData.get('name'),
+          description: formData.get('description'),
+        })
+        if (result.ok) router.push('/admin/templates')
+        return result
+      }
+
+  const [state, , pending] = useActionState(action, null)
+
+  return (
+    <form action={action} className="space-y-4">
+      {!state?.ok && state && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          {state.message}
+        </div>
+      )}
+
+      <div>
+        <Label htmlFor="name">Template Name</Label>
+        <Input
+          id="name"
+          name="name"
+          defaultValue={template?.name}
+          required
+          maxLength={200}
+          disabled={pending}
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="description">Description</Label>
+        <Textarea
+          id="description"
+          name="description"
+          defaultValue={template?.description || ''}
+          maxLength={2000}
+          disabled={pending}
+        />
+      </div>
+
+      <div className="flex gap-2">
+        <Button type="submit" disabled={pending}>
+          {pending ? 'Saving...' : isCreate ? 'Create' : 'Update'}
+        </Button>
+        <Button type="button" variant="ghost" onClick={() => router.back()} disabled={pending}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
