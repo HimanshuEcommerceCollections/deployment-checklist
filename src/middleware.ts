@@ -34,6 +34,23 @@ export default auth((req) => {
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   )
 
+  /**
+   * Tier 2 already rejected this token — do NOT bounce back into the app.
+   *
+   * `getRequestContext()` throws UnauthenticatedError and the authenticated
+   * layout redirects here with `?reason=`. The cookie is still well-signed and
+   * unexpired, so `req.auth` is truthy and the rule below would send the request
+   * straight back to /dashboard, which rejects it again: an infinite 307 loop
+   * that the user cannot escape, because they never reach the login form.
+   *
+   * This is the one case where Tier 1 must defer to Tier 2. It happens whenever a
+   * session outlives the row behind it — a deleted or suspended account, a bumped
+   * sessionEpoch, or a database swapped underneath a live cookie.
+   */
+  if (pathname === '/login' && req.nextUrl.searchParams.has('reason')) {
+    return NextResponse.next()
+  }
+
   // Signed in and heading for a login page → send them somewhere useful.
   if (isPublic && req.auth) {
     if (pathname === '/login') {
