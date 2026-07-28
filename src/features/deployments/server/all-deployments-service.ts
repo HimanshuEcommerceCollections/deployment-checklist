@@ -24,7 +24,6 @@ export class AllDeploymentsService {
       include: {
         project: true,
         environment: true,
-        templateVersion: true,
         _count: { select: { items: true, comments: true } },
       },
       orderBy: { createdAt: 'desc' },
