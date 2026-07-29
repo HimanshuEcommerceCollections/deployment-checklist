@@ -20,18 +20,20 @@ export function AdminProjectForm({ project }: AdminProjectFormProps) {
   const formAction = isCreate
     ? async (_: any, formData: FormData) => {
         const result = await createAdminProject({
-          name: formData.get('name'),
-          description: formData.get('description'),
-          color: formData.get('color'),
+          name: formData.get('name') as string,
+          description: formData.get('description') as string,
+          color: formData.get('color') as string,
+          key: formData.get('key') as string,
         })
         if (result.ok) router.push('/admin/projects')
         return result
       }
     : async (_: any, formData: FormData) => {
         const result = await updateAdminProject(project!.id, {
-          name: formData.get('name'),
-          description: formData.get('description'),
-          color: formData.get('color'),
+          name: formData.get('name') as string,
+          description: formData.get('description') as string,
+          color: formData.get('color') as string,
+          key: formData.get('key') as string,
         })
         if (result.ok) router.push('/admin/projects')
         return result
@@ -57,6 +59,21 @@ export function AdminProjectForm({ project }: AdminProjectFormProps) {
           maxLength={200}
           disabled={pending}
         />
+      </div>
+
+      <div>
+        <Label htmlFor="key">Short Code</Label>
+        <Input
+          id="key"
+          name="key"
+          defaultValue={project?.key || ''}
+          maxLength={12}
+          placeholder="Auto-generated from name"
+          disabled={pending}
+        />
+        <p className="mt-1 text-xs text-gray-500">
+          Used in version strings and lists, e.g. FRESHBREATH. Leave blank to generate it.
+        </p>
       </div>
 
       <div>

@@ -23,7 +23,7 @@ export class EnvironmentsService {
   }
 
   async createEnvironment(ctx: RequestContext, input: CreateEnvironmentInput) {
-    requirePermission(ctx, PERMISSIONS.environment.create)
+    requirePermission(ctx, PERMISSIONS.environment.manage)
 
     const env = await db.environment.create({
       data: {
@@ -48,7 +48,7 @@ export class EnvironmentsService {
   }
 
   async updateEnvironment(ctx: RequestContext, id: string, input: UpdateEnvironmentInput) {
-    requirePermission(ctx, PERMISSIONS.environment.edit)
+    requirePermission(ctx, PERMISSIONS.environment.manage)
 
     const env = await db.environment.update({
       where: { id },
@@ -73,7 +73,7 @@ export class EnvironmentsService {
   }
 
   async deleteEnvironment(ctx: RequestContext, id: string) {
-    requirePermission(ctx, PERMISSIONS.environment.delete)
+    requirePermission(ctx, PERMISSIONS.environment.manage)
 
     const env = await db.environment.update({
       where: { id },

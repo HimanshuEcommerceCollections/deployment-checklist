@@ -1,5 +1,7 @@
 import 'server-only'
 
+import { nanoid } from 'nanoid'
+
 import { db } from '@/lib/db/prisma'
 
 const SECTIONS = [
@@ -116,46 +118,61 @@ export async function seedDeploymentTemplate(orgId: string, userId: string) {
 
     if (existing) return existing
 
+    const sections = SECTIONS.map((section, sIdx) => ({
+      id: nanoid(),
+      key: null,
+      title: section.title,
+      description: null,
+      order: sIdx,
+      deletedAt: null,
+      items: section.items.map((label, iIdx) => ({
+        id: nanoid(),
+        key: null,
+        label,
+        helpText: null,
+        order: iIdx,
+        isRequired: true,
+        evidenceRequired: false,
+        ownerRoleKey: null,
+        environmentKeys: [],
+        deletedAt: null,
+      })),
+    }))
+
+    const itemCount = sections.reduce((sum, s) => sum + s.items.length, 0)
+
     const template = await db.checklistTemplate.create({
       data: {
         organizationId: orgId,
+        key: "PREDEPLOY",
         name: "Pre-Deployment Checklist",
-        description: "Comprehensive pre-deployment checklist covering code, testing, security, infrastructure, and more.",
+        description:
+          "Comprehensive pre-deployment checklist covering code, testing, security, infrastructure, and more.",
         createdById: userId,
+        currentVersion: 1,
+        versionCounter: 1,
         versions: {
           create: {
-            versionNumber: 1,
+            organizationId: orgId,
+            version: 1,
             status: "PUBLISHED",
             publishedById: userId,
             publishedAt: new Date(),
             createdById: userId,
-            sections: {
-              create: SECTIONS.map((section, sIdx) => ({
-                title: section.title,
-                order: sIdx,
-                createdById: userId,
-                items: {
-                  create: section.items.map((itemTitle, iIdx) => ({
-                    title: itemTitle,
-                    order: iIdx,
-                    requiresEvidence: false,
-                    createdById: userId,
-                  })),
-                },
-              })),
-            },
+            sections,
+            sectionCount: sections.length,
+            itemCount,
+            requiredCount: itemCount,
           },
         },
       },
-      include: {
-        versions: {
-          include: {
-            sections: {
-              include: { items: true },
-            },
-          },
-        },
-      },
+      include: { versions: true },
+    })
+
+    // currentVersionId can only be set once the version row exists.
+    await db.checklistTemplate.update({
+      where: { id: template.id },
+      data: { currentVersionId: template.versions[0]?.id },
     })
 
     return template

@@ -151,6 +151,22 @@ export const AUDIT_ACTIONS = {
     retried: 'notification.retried',
   },
 
+  apiKey: {
+    created: 'api_key.created',
+    updated: 'api_key.updated',
+    revoked: 'api_key.revoked',
+    deleted: 'api_key.deleted',
+  },
+
+  integration: {
+    created: 'integration.created',
+    updated: 'integration.updated',
+    enabled: 'integration.enabled',
+    disabled: 'integration.disabled',
+    deleted: 'integration.deleted',
+    deliveryFailed: 'integration.delivery_failed',
+  },
+
   // ── Audit of the audit ────────────────────────────────────────────────────
   audit: {
     /** Exporting the audit log is itself an auditable act. */

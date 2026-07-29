@@ -3,7 +3,8 @@ import 'server-only'
 import { NotFoundError } from '@/domain/shared/errors'
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
-import { type RequestContext } from '@/lib/authz/authorize'
+import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
+import { PERMISSIONS } from '@/lib/authz/permissions'
 import { db } from '@/lib/db/prisma'
 
 import type { UpdateSettingsInput } from '../schemas/settings.schema'
@@ -22,14 +23,7 @@ export class SettingsService {
   }
 
   async updateSettings(ctx: RequestContext, input: UpdateSettingsInput) {
-    // Check permission — typically org-wide admin or super-admin
-    const hasPermission =
-      ctx.permissions.isSuperAdmin ||
-      (await this.canManageSettings(ctx.actorId, ctx.organizationId))
-
-    if (!hasPermission) {
-      throw new Error('Insufficient permissions to manage settings')
-    }
+    requirePermission(ctx, PERMISSIONS.settings.manage)
 
     const updated = await db.setting.update({
       where: { organizationId: ctx.organizationId },

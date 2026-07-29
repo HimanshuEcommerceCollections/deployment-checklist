@@ -12,8 +12,22 @@ export class IntegrationsService {
   async listIntegrations(ctx: RequestContext) {
     requirePermission(ctx, PERMISSIONS.admin.access)
 
+    /// secretRef is deliberately omitted — ciphertext envelopes never leave the server.
     return db.integration.findMany({
       where: { organizationId: ctx.organizationId, deletedAt: null },
+      select: {
+        id: true,
+        type: true,
+        name: true,
+        config: true,
+        enabled: true,
+        lastDeliveryAt: true,
+        lastDeliveryStatus: true,
+        lastError: true,
+        failureCount: true,
+        createdAt: true,
+        updatedAt: true,
+      },
       orderBy: { createdAt: 'desc' },
     })
   }

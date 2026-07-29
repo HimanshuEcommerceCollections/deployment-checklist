@@ -9,6 +9,33 @@ import { db } from '@/lib/db/prisma'
 import type { CreateTemplateInput, UpdateTemplateInput } from '../schemas/templates.schema'
 
 export class TemplatesService {
+  /// key is unique per organization — probe for a free suffix.
+  private async resolveKey(ctx: RequestContext, name: string, excludeId?: string) {
+    const base =
+      name
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '')
+        .slice(0, 12) || 'TPL'
+
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const suffix = attempt === 0 ? '' : String(attempt + 1)
+      const key = base.slice(0, 12 - suffix.length) + suffix
+
+      const clash = await db.checklistTemplate.findFirst({
+        where: {
+          organizationId: ctx.organizationId,
+          key,
+          ...(excludeId ? { id: { not: excludeId } } : {}),
+        },
+        select: { id: true },
+      })
+
+      if (!clash) return key
+    }
+
+    throw new Error(`Could not generate a unique key for template "${name}"`)
+  }
+
   async listTemplates(ctx: RequestContext) {
     return db.checklistTemplate.findMany({
       where: { organizationId: ctx.organizationId, deletedAt: null },
@@ -27,20 +54,31 @@ export class TemplatesService {
   async createTemplate(ctx: RequestContext, input: CreateTemplateInput) {
     requirePermission(ctx, PERMISSIONS.template.manage)
 
+    const key = await this.resolveKey(ctx, input.name)
+
     const template = await db.checklistTemplate.create({
       data: {
         organizationId: ctx.organizationId,
+        key,
         name: input.name,
-        description: input.description,
+        description: input.description || null,
         createdById: ctx.actorId,
+        versionCounter: 1,
+        searchText: [input.name, key, input.description]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase(),
         versions: {
           create: {
-            versionNumber: 1,
+            organizationId: ctx.organizationId,
+            version: 1,
             status: 'DRAFT',
+            sections: [],
             createdById: ctx.actorId,
           },
         },
       },
+      include: { versions: true },
     })
 
     await audit.record(db, ctx, AUDIT_ACTIONS.template.created, {
@@ -55,11 +93,13 @@ export class TemplatesService {
   async updateTemplate(ctx: RequestContext, id: string, input: UpdateTemplateInput) {
     requirePermission(ctx, PERMISSIONS.template.manage)
 
+    await this.getTemplate(ctx, id)
+
     const template = await db.checklistTemplate.update({
       where: { id },
       data: {
         name: input.name,
-        description: input.description,
+        description: input.description || null,
         updatedById: ctx.actorId,
       },
     })
@@ -76,9 +116,11 @@ export class TemplatesService {
   async deleteTemplate(ctx: RequestContext, id: string) {
     requirePermission(ctx, PERMISSIONS.template.delete)
 
+    await this.getTemplate(ctx, id)
+
     const template = await db.checklistTemplate.update({
       where: { id },
-      data: { deletedAt: new Date(), updatedById: ctx.actorId },
+      data: { deletedAt: new Date(), deletedById: ctx.actorId, updatedById: ctx.actorId },
     })
 
     await audit.record(db, ctx, AUDIT_ACTIONS.template.deleted, {

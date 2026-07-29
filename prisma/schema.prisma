@@ -142,6 +142,8 @@ model Organization {
   invitations   Invitation[]
   auditLogs     AuditLog[]
   notifications NotificationOutbox[]
+  apiKeys       ApiKey[]
+  integrations  Integration[]
 
   @@map("organizations")
 }
@@ -1009,6 +1011,78 @@ model NotificationOutbox {
   @@index([organizationId, status, createdAt(sort: Desc)])
   @@index([relatedEntityType, relatedEntityId])
   @@map("notification_outbox")
+}
+
+// ===========================================================================
+//  ACCESS TOKENS & OUTBOUND INTEGRATIONS
+// ===========================================================================
+
+/// Machine credentials for the public API. The raw token is shown exactly once
+/// at creation and never stored — only its SHA-256 hash, same rule as
+/// Invitation/AuthToken. `prefix` is the non-secret display half so the UI can
+/// list keys without ever holding a usable credential.
+model ApiKey {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  name   String
+  prefix String // e.g. "dc_live_a1b2c3" — safe to display
+  /// SHA-256 of the full token. Lookup is by hash, never by plaintext.
+  tokenHash String @unique
+  /// Permission keys this key may exercise; a subset of PermissionDefinition.
+  scopes    String[]
+
+  lastUsedAt DateTime?
+  lastUsedIp String?
+  useCount   Int       @default(0)
+
+  expiresAt DateTime?
+  revokedAt DateTime?
+  revokedById String? @db.ObjectId
+
+  createdById String    @db.ObjectId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([organizationId, prefix])
+  @@index([organizationId, deletedAt, createdAt(sort: Desc)])
+  @@map("api_keys")
+}
+
+/// Outbound delivery targets (Slack, GitHub, generic webhook). Credentials live
+/// in `secretRef` as an AES-256-GCM envelope — never plaintext, same contract
+/// as Setting.smtpSecretRef. `config` holds non-secret shape per type.
+model Integration {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  /// slack | github | webhook
+  type String
+  name String
+  /// Non-secret settings: channel, repo, url, event filters.
+  config Json?
+  /// Ciphertext envelope for the token / signing secret.
+  secretRef String?
+
+  enabled Boolean @default(true)
+
+  lastDeliveryAt     DateTime?
+  lastDeliveryStatus String?
+  lastError          String?
+  failureCount       Int       @default(0)
+
+  createdById String    @db.ObjectId
+  updatedById String?   @db.ObjectId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([organizationId, deletedAt, type])
+  @@index([organizationId, enabled])
+  @@map("integrations")
 }
 
 // ===========================================================================

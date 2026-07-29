@@ -4,36 +4,45 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { listAllUserDeployments } from '@/features/deployments/actions/all-deployments.actions'
+import { listUserProjects } from '@/features/projects/actions/projects.actions'
 import { can } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { getRequestContext } from '@/server/context'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
-/**
- * Dashboard — Phase 1 placeholder.
- *
- * Deliberately does not fake the stat tiles. Total Projects, Deployments Today,
- * Completion Rate and the activity feeds arrive in Phase 6, once there is real
- * data from Phase 4 to aggregate. Rendering zeroes styled as real metrics would
- * make an unfinished page look finished.
- *
- * What it does prove: the whole identity stack is wired — session verified
- * against the database, permissions resolved, navigation generated from them.
- */
+const STATUS_STYLES: Record<string, string> = {
+  COMPLETED: 'bg-go-surface text-go border-go/40',
+  IN_PROGRESS: 'bg-hold-surface text-hold border-hold/40',
+  BLOCKED: 'bg-blocked-surface text-blocked border-blocked/40',
+  FAILED: 'bg-blocked-surface text-blocked border-blocked/40',
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
   searchParams: Promise<{ welcome?: string }>
 }) {
-  const [ctx, params] = await Promise.all([getRequestContext(), searchParams])
+  const [ctx, params, projects, deployments] = await Promise.all([
+    getRequestContext(),
+    searchParams,
+    listUserProjects(),
+    listAllUserDeployments(),
+  ])
 
-  const abilities = {
-    canCreateDeployment: can(ctx, PERMISSIONS.deployment.create),
-    canManageTemplates: can(ctx, PERMISSIONS.template.manage),
-    canInvite: can(ctx, PERMISSIONS.user.invite),
-    isAdmin: can(ctx, PERMISSIONS.admin.access),
-  }
+  const active = deployments.filter((d) => d.status === 'IN_PROGRESS' || d.status === 'BLOCKED')
+  const completed = deployments.filter((d) => d.status === 'COMPLETED')
+  const recent = deployments.slice(0, 5)
+
+  const isAdmin = can(ctx, PERMISSIONS.admin.access)
+  const canInvite = can(ctx, PERMISSIONS.user.invite)
+
+  const stats = [
+    { label: 'Projects', value: projects.length, tone: '' },
+    { label: 'In flight', value: active.length, tone: 'text-hold' },
+    { label: 'Completed', value: completed.length, tone: 'text-go' },
+  ]
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -59,17 +68,112 @@ export default async function DashboardPage({
         </p>
       </header>
 
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {stats.map((stat) => (
+          <Card key={stat.label}>
+            <CardContent className="pt-6">
+              <p className="text-muted-foreground font-mono text-[10px] font-bold uppercase tracking-[0.16em]">
+                {stat.label}
+              </p>
+              <p className={`mt-1 text-3xl font-semibold tabular-nums ${stat.tone}`}>
+                {stat.value}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Your access</CardTitle>
-          <CardDescription>
-            Resolved from your roles on every request — not cached in your session token.
-          </CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base">Recent deployments</CardTitle>
+            <CardDescription>Across every project you are a member of.</CardDescription>
+          </div>
+          <Button size="sm" variant="ghost" asChild>
+            <Link href="/deployments">View all</Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {recent.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              No deployments yet. They appear here once a release run is created.
+            </p>
+          ) : (
+            <ul className="divide-line divide-y">
+              {recent.map((dep) => (
+                <li key={dep.id}>
+                  <Link
+                    href={`/projects/${dep.projectId}/deployments/${dep.id}`}
+                    className="hover:bg-panel-2 -mx-2 flex items-center justify-between gap-4 rounded-md px-2 py-2.5 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        <span className="font-mono">{dep.reference}</span>
+                        {dep.title ? ` · ${dep.title}` : ''}
+                      </p>
+                      <p className="text-muted-foreground mt-0.5 truncate text-xs">
+                        {dep.project.name} · {dep.environmentName} · v{dep.version}
+                      </p>
+                    </div>
+                    <Badge
+                      variant="secondary"
+                      className={`shrink-0 border font-mono text-[10px] ${
+                        STATUS_STYLES[dep.status] ?? ''
+                      }`}
+                    >
+                      {dep.status.replace('_', ' ')}
+                    </Badge>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base">Your projects</CardTitle>
+            <CardDescription>
+              Resolved from your roles on every request — not cached in your session token.
+            </CardDescription>
+          </div>
+          <Button size="sm" variant="ghost" asChild>
+            <Link href="/projects">View all</Link>
+          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
+          {projects.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No projects assigned yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {projects.slice(0, 4).map((project) => (
+                <Link
+                  key={project.id}
+                  href={`/projects/${project.id}`}
+                  className="border-line hover:bg-panel-2 rounded-lg border p-3 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="size-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: project.color }}
+                      aria-hidden
+                    />
+                    <p className="truncate text-sm font-medium">{project.name}</p>
+                  </div>
+                  <p className="text-muted-foreground mt-1 font-mono text-xs">
+                    {project.key} · {project._count.deployments} deployment
+                    {project._count.deployments === 1 ? '' : 's'}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          )}
+
           <div>
             <p className="text-muted-foreground mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em]">
-              Roles
+              Your roles
             </p>
             <div className="flex flex-wrap gap-1.5">
               {ctx.roleKeys.length === 0 ? (
@@ -89,55 +193,9 @@ export default async function DashboardPage({
             </div>
           </div>
 
-          <div>
-            <p className="text-muted-foreground mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em]">
-              Permissions granted
-            </p>
-            <p className="text-sm">
-              {ctx.permissions.isSuperAdmin
-                ? 'All permissions (wildcard grant)'
-                : `${ctx.permissions.global.size} organisation-wide, across ${ctx.permissions.byProject.size} project-scoped grant(s)`}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Next steps</CardTitle>
-          <CardDescription>
-            Phase 1 (identity) is complete. Projects, templates and the deployment console follow.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <ol className="space-y-2 text-sm">
-            {[
-              { done: true, label: 'Sign in, invitations, password reset, audit trail' },
-              { done: false, label: 'Projects and environments (Phase 2)' },
-              { done: false, label: 'Checklist templates with versioning (Phase 3)' },
-              { done: false, label: 'The deployment console (Phase 4)' },
-            ].map((step) => (
-              <li key={step.label} className="flex items-start gap-2.5">
-                <span
-                  className={
-                    step.done
-                      ? 'border-go bg-go text-background mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border text-[10px] font-bold'
-                      : 'border-line mt-0.5 size-4 shrink-0 rounded-sm border'
-                  }
-                  aria-hidden
-                >
-                  {step.done ? '✓' : ''}
-                </span>
-                <span className={step.done ? 'text-muted-foreground line-through' : ''}>
-                  {step.label}
-                </span>
-              </li>
-            ))}
-          </ol>
-
-          {abilities.isAdmin && (
+          {isAdmin && (
             <div className="border-line flex flex-wrap gap-2 border-t pt-3">
-              {abilities.canInvite && (
+              {canInvite && (
                 <Button size="sm" variant="outline" asChild>
                   <Link href="/admin/users">Invite a teammate</Link>
                 </Button>

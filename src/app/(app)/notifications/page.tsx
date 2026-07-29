@@ -16,7 +16,7 @@ export default function NotificationsPage() {
     slackNotifications: false,
   })
 
-  const handleChange = (key: string) => {
+  const handleChange = (key: keyof typeof prefs) => {
     setPrefs((p) => ({ ...p, [key]: !p[key] }))
   }
 

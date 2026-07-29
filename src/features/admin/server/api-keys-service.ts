@@ -22,6 +22,7 @@ export class ApiKeysService {
         scopes: true,
         expiresAt: true,
         lastUsedAt: true,
+        revokedAt: true,
         createdAt: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -31,8 +32,11 @@ export class ApiKeysService {
   async createApiKey(ctx: RequestContext, input: CreateApiKeyInput) {
     requirePermission(ctx, PERMISSIONS.admin.access)
 
-    const token = crypto.randomBytes(32).toString('hex')
-    const prefix = token.slice(0, 8)
+    /// prefix is stored in plaintext for display, so it must be independent of
+    /// the secret — deriving it from the token would leak part of the credential.
+    const prefix = `dc_${crypto.randomBytes(4).toString('hex')}`
+    const secret = crypto.randomBytes(32).toString('base64url')
+    const token = `${prefix}_${secret}`
     const hash = crypto.createHash('sha256').update(token).digest('hex')
 
     const expiresAt = input.expiresInDays
@@ -65,7 +69,7 @@ export class ApiKeysService {
 
     const apiKey = await db.apiKey.update({
       where: { id: keyId },
-      data: { deletedAt: new Date(), updatedById: ctx.actorId },
+      data: { revokedAt: new Date(), revokedById: ctx.actorId },
     })
 
     await audit.record(db, ctx, AUDIT_ACTIONS.apiKey.revoked, {

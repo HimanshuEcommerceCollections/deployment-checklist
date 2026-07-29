@@ -1,8 +1,22 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
+
 import { getRequestContext } from '@/server/context'
 import { templateVersionsService } from '../server/template-versions-service'
-import { CreateSectionSchema, CreateItemSchema, UpdateSectionSchema, UpdateItemSchema } from '../schemas/template-versions.schema'
+import {
+  CreateSectionSchema,
+  CreateItemSchema,
+  UpdateSectionSchema,
+  UpdateItemSchema,
+} from '../schemas/template-versions.schema'
+
+function fail(error: unknown, fallback: string) {
+  return {
+    ok: false as const,
+    message: error instanceof Error && error.message ? error.message : fallback,
+  }
+}
 
 export async function getTemplateVersion(templateId: string, versionId: string) {
   const ctx = await getRequestContext()
@@ -10,53 +24,141 @@ export async function getTemplateVersion(templateId: string, versionId: string) 
 }
 
 export async function publishTemplateVersion(templateId: string, versionId: string) {
-  const ctx = await getRequestContext()
-  const result = await templateVersionsService.publishVersion(ctx, templateId, versionId)
-  return { ok: true, message: 'Version published', data: result }
+  try {
+    const ctx = await getRequestContext()
+    const data = await templateVersionsService.publishVersion(ctx, templateId, versionId)
+    revalidatePath(`/admin/templates/${templateId}`)
+    return { ok: true as const, message: 'Version published', data }
+  } catch (error) {
+    return fail(error, 'Could not publish version')
+  }
 }
 
 export async function deprecateTemplateVersion(templateId: string, versionId: string) {
-  const ctx = await getRequestContext()
-  const result = await templateVersionsService.deprecateVersion(ctx, templateId, versionId)
-  return { ok: true, message: 'Version deprecated', data: result }
+  try {
+    const ctx = await getRequestContext()
+    const data = await templateVersionsService.deprecateVersion(ctx, templateId, versionId)
+    revalidatePath(`/admin/templates/${templateId}`)
+    return { ok: true as const, message: 'Version deprecated', data }
+  } catch (error) {
+    return fail(error, 'Could not deprecate version')
+  }
 }
 
-export async function createTemplateSection(templateId: string, versionId: string, input: unknown) {
-  const ctx = await getRequestContext()
-  const data = CreateSectionSchema.parse(input)
-  const result = await templateVersionsService.createSection(ctx, templateId, versionId, data)
-  return { ok: true, data: result }
+export async function createTemplateSection(
+  templateId: string,
+  versionId: string,
+  input: unknown,
+) {
+  try {
+    const ctx = await getRequestContext()
+    const parsed = CreateSectionSchema.parse(input)
+    const data = await templateVersionsService.createSection(ctx, templateId, versionId, parsed)
+    revalidatePath(`/admin/templates/${templateId}`)
+    return { ok: true as const, message: 'Section added', data }
+  } catch (error) {
+    return fail(error, 'Could not add section')
+  }
 }
 
-export async function updateTemplateSection(sectionId: string, input: unknown) {
-  const ctx = await getRequestContext()
-  const data = UpdateSectionSchema.parse(input)
-  const result = await templateVersionsService.updateSection(ctx, sectionId, data)
-  return { ok: true, data: result }
+export async function updateTemplateSection(
+  templateId: string,
+  versionId: string,
+  sectionId: string,
+  input: unknown,
+) {
+  try {
+    const ctx = await getRequestContext()
+    const parsed = UpdateSectionSchema.parse(input)
+    const data = await templateVersionsService.updateSection(
+      ctx,
+      templateId,
+      versionId,
+      sectionId,
+      parsed,
+    )
+    revalidatePath(`/admin/templates/${templateId}`)
+    return { ok: true as const, message: 'Section updated', data }
+  } catch (error) {
+    return fail(error, 'Could not update section')
+  }
 }
 
-export async function deleteTemplateSection(sectionId: string) {
-  const ctx = await getRequestContext()
-  await templateVersionsService.deleteSection(ctx, sectionId)
-  return { ok: true, message: 'Section deleted' }
+export async function deleteTemplateSection(
+  templateId: string,
+  versionId: string,
+  sectionId: string,
+) {
+  try {
+    const ctx = await getRequestContext()
+    await templateVersionsService.deleteSection(ctx, templateId, versionId, sectionId)
+    revalidatePath(`/admin/templates/${templateId}`)
+    return { ok: true as const, message: 'Section deleted' }
+  } catch (error) {
+    return fail(error, 'Could not delete section')
+  }
 }
 
-export async function createTemplateItem(sectionId: string, input: unknown) {
-  const ctx = await getRequestContext()
-  const data = CreateItemSchema.parse(input)
-  const result = await templateVersionsService.createItem(ctx, sectionId, data)
-  return { ok: true, data: result }
+export async function createTemplateItem(
+  templateId: string,
+  versionId: string,
+  sectionId: string,
+  input: unknown,
+) {
+  try {
+    const ctx = await getRequestContext()
+    const parsed = CreateItemSchema.parse(input)
+    const data = await templateVersionsService.createItem(
+      ctx,
+      templateId,
+      versionId,
+      sectionId,
+      parsed,
+    )
+    revalidatePath(`/admin/templates/${templateId}`)
+    return { ok: true as const, message: 'Item added', data }
+  } catch (error) {
+    return fail(error, 'Could not add item')
+  }
 }
 
-export async function updateTemplateItem(itemId: string, input: unknown) {
-  const ctx = await getRequestContext()
-  const data = UpdateItemSchema.parse(input)
-  const result = await templateVersionsService.updateItem(ctx, itemId, data)
-  return { ok: true, data: result }
+export async function updateTemplateItem(
+  templateId: string,
+  versionId: string,
+  sectionId: string,
+  itemId: string,
+  input: unknown,
+) {
+  try {
+    const ctx = await getRequestContext()
+    const parsed = UpdateItemSchema.parse(input)
+    const data = await templateVersionsService.updateItem(
+      ctx,
+      templateId,
+      versionId,
+      sectionId,
+      itemId,
+      parsed,
+    )
+    revalidatePath(`/admin/templates/${templateId}`)
+    return { ok: true as const, message: 'Item updated', data }
+  } catch (error) {
+    return fail(error, 'Could not update item')
+  }
 }
 
-export async function deleteTemplateItem(itemId: string) {
-  const ctx = await getRequestContext()
-  await templateVersionsService.deleteItem(ctx, itemId)
-  return { ok: true, message: 'Item deleted' }
+export async function deleteTemplateItem(
+  templateId: string,
+  versionId: string,
+  sectionId: string,
+  itemId: string,
+) {
+  try {
+    const ctx = await getRequestContext()
+    await templateVersionsService.deleteItem(ctx, templateId, versionId, sectionId, itemId)
+    revalidatePath(`/admin/templates/${templateId}`)
+    return { ok: true as const, message: 'Item deleted' }
+  } catch (error) {
+    return fail(error, 'Could not delete item')
+  }
 }

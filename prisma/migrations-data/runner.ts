@@ -24,11 +24,21 @@ const db = new PrismaClient()
 interface Migration {
   name: string
   up: (client: PrismaClient) => Promise<void>
+  /**
+   * Re-run on every invocation instead of once.
+   *
+   * `prisma db push` drops any index it cannot see in the schema, which includes
+   * every TTL index here. A once-only ledger meant the first push after setup
+   * silently removed them for good. Index creation is idempotent, so the repair
+   * is simply to always re-apply it.
+   */
+  alwaysRun?: boolean
 }
 
 const MIGRATIONS: Migration[] = [
   {
     name: '0001-create-ttl-indexes',
+    alwaysRun: true,
     /**
      * TTL indexes cannot be declared in the Prisma schema.
      *
@@ -50,6 +60,7 @@ const MIGRATIONS: Migration[] = [
   },
   {
     name: '0002-notification-outbox-prune-index',
+    alwaysRun: true,
     /**
      * Sent notifications are pruned after 30 days — they are an operational
      * record, and the audit log is the durable one. Applied as a TTL on sentAt
@@ -203,24 +214,27 @@ async function run() {
   let count = 0
 
   for (const migration of MIGRATIONS) {
-    if (applied.has(migration.name)) {
+    if (applied.has(migration.name) && !migration.alwaysRun) {
       console.log(`  ✓ ${migration.name} (already applied)`)
       continue
     }
 
-    console.log(`  → ${migration.name}`)
+    console.log(`  → ${migration.name}${migration.alwaysRun ? ' (repeatable)' : ''}`)
     const startedAt = Date.now()
 
     await migration.up(db)
 
-    await db.dataMigration.create({
-      data: {
-        name: migration.name,
-        // Guards against an already-applied migration being edited later.
-        checksum: createHash('sha256').update(migration.up.toString()).digest('hex').slice(0, 16),
-        durationMs: Date.now() - startedAt,
-        appliedBy: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.USER ?? 'local',
-      },
+    const record = {
+      // Guards against an already-applied migration being edited later.
+      checksum: createHash('sha256').update(migration.up.toString()).digest('hex').slice(0, 16),
+      durationMs: Date.now() - startedAt,
+      appliedBy: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.USER ?? 'local',
+    }
+
+    await db.dataMigration.upsert({
+      where: { name: migration.name },
+      create: { name: migration.name, ...record },
+      update: record,
     })
 
     count += 1
