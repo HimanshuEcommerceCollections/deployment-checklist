@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
+import { type RequestContext, projectFilter, requirePermission } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { db } from '@/lib/db/prisma'
 
@@ -10,15 +10,11 @@ export class AllDeploymentsService {
 
     return db.deploymentRun.findMany({
       where: {
-        project: {
-          organizationId: ctx.organizationId,
-          memberships: {
-            some: {
-              userId: ctx.actorId,
-              deletedAt: null,
-            },
-          },
-        },
+        // Scoped on projectId rather than through the `project` relation: the
+        // filter belongs to the row being read, and DeploymentRun carries the id
+        // directly, so this stays a single indexed predicate.
+        ...projectFilter(ctx, PERMISSIONS.deployment.read),
+        project: { organizationId: ctx.organizationId },
         deletedAt: null,
       },
       include: {

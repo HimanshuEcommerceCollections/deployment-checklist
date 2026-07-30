@@ -43,9 +43,10 @@ export function ProjectsList({ projects }: ProjectsListProps) {
               </div>
             </CardHeader>
             <CardContent>
+              {/* Member count deliberately omitted — access is org-wide, so it is
+                  0 for every project and reads as "nobody has access". */}
               <div className="flex gap-4 text-sm text-gray-600">
                 <span>{project._count.deployments} deployment(s)</span>
-                <span>{project._count.memberships} member(s)</span>
               </div>
             </CardContent>
           </Card>

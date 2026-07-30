@@ -17,7 +17,7 @@ const NEW_PASSWORD = 'FreshPassphrase42!'
 
 let organizationId: string
 let adminCtx: RequestContext
-let developerRoleId: string
+let engineerRoleId: string
 
 /** Pull the emailed token out of the outbox row — it is never stored raw. */
 async function tokenFromOutbox(invitationId: string): Promise<string> {
@@ -34,8 +34,9 @@ beforeAll(async () => {
   organizationId = organization.id
 
   const adminRole = await db.role.findFirstOrThrow({ where: { organizationId, key: 'admin' } })
-  const developerRole = await db.role.findFirstOrThrow({ where: { organizationId, key: 'developer' } })
-  developerRoleId = developerRole.id
+  // 'engineer' replaced 'developer' when the seeded roles were consolidated.
+  const engineerRole = await db.role.findFirstOrThrow({ where: { organizationId, key: 'engineer' } })
+  engineerRoleId = engineerRole.id
 
   const admin = await db.user.findFirstOrThrow({ where: { organizationId, roleIds: { has: adminRole.id } } })
 
@@ -71,7 +72,7 @@ describe('invite → accept', () => {
     const { invitation, userId } = await invitationService.invite(adminCtx, {
       email: INVITEE,
       name: 'Test Invitee',
-      roleIds: [developerRoleId],
+      roleIds: [engineerRoleId],
       projectGrants: [],
       message: 'Welcome to the team',
     })
@@ -92,7 +93,7 @@ describe('invite → accept', () => {
   it('stores only the token hash, never the raw token', async () => {
     const { invitation } = await invitationService.invite(adminCtx, {
       email: INVITEE,
-      roleIds: [developerRoleId],
+      roleIds: [engineerRoleId],
       projectGrants: [],
     })
 
@@ -108,7 +109,7 @@ describe('invite → accept', () => {
   it('accepts the invitation, activating the account', async () => {
     const { invitation } = await invitationService.invite(adminCtx, {
       email: INVITEE,
-      roleIds: [developerRoleId],
+      roleIds: [engineerRoleId],
       projectGrants: [],
     })
     const token = await tokenFromOutbox(invitation.id)
@@ -125,7 +126,7 @@ describe('invite → accept', () => {
     const stored = await db.user.findUniqueOrThrow({ where: { id: user.id } })
     expect(stored.status).toBe('ACTIVE')
     expect(stored.passwordHash).not.toBeNull()
-    expect(stored.roleIds).toContain(developerRoleId)
+    expect(stored.roleIds).toContain(engineerRoleId)
 
     // The new credentials work immediately.
     await reset(RATE_LIMITS.login(INVITEE).key)
@@ -135,7 +136,7 @@ describe('invite → accept', () => {
   it('burns the token — a replayed link fails', async () => {
     const { invitation } = await invitationService.invite(adminCtx, {
       email: INVITEE,
-      roleIds: [developerRoleId],
+      roleIds: [engineerRoleId],
       projectGrants: [],
     })
     const token = await tokenFromOutbox(invitation.id)
@@ -159,8 +160,8 @@ describe('invite → accept', () => {
 
     const { invitation } = await invitationService.invite(adminCtx, {
       email: INVITEE,
-      roleIds: [developerRoleId],
-      projectGrants: [{ projectId: project.id, roleId: developerRoleId }],
+      roleIds: [engineerRoleId],
+      projectGrants: [{ projectId: project.id, roleId: engineerRoleId }],
     })
     const token = await tokenFromOutbox(invitation.id)
 
@@ -177,7 +178,7 @@ describe('invite → accept', () => {
   it('rejects a weak password against the org policy', async () => {
     const { invitation } = await invitationService.invite(adminCtx, {
       email: INVITEE,
-      roleIds: [developerRoleId],
+      roleIds: [engineerRoleId],
       projectGrants: [],
     })
     const token = await tokenFromOutbox(invitation.id)
@@ -196,14 +197,14 @@ describe('invite → accept', () => {
   it('invalidates the previous token when re-invited', async () => {
     const first = await invitationService.invite(adminCtx, {
       email: INVITEE,
-      roleIds: [developerRoleId],
+      roleIds: [engineerRoleId],
       projectGrants: [],
     })
     const firstToken = await tokenFromOutbox(first.invitation.id)
 
     const second = await invitationService.invite(adminCtx, {
       email: INVITEE,
-      roleIds: [developerRoleId],
+      roleIds: [engineerRoleId],
       projectGrants: [],
     })
     const secondToken = await tokenFromOutbox(second.invitation.id)
@@ -216,7 +217,7 @@ describe('invite → accept', () => {
   it('reports an expired invitation distinctly', async () => {
     const { invitation } = await invitationService.invite(adminCtx, {
       email: INVITEE,
-      roleIds: [developerRoleId],
+      roleIds: [engineerRoleId],
       projectGrants: [],
     })
     const token = await tokenFromOutbox(invitation.id)
@@ -239,7 +240,7 @@ describe('invite → accept', () => {
   it('refuses to invite an already-active user', async () => {
     const { invitation } = await invitationService.invite(adminCtx, {
       email: INVITEE,
-      roleIds: [developerRoleId],
+      roleIds: [engineerRoleId],
       projectGrants: [],
     })
     const token = await tokenFromOutbox(invitation.id)
@@ -251,7 +252,7 @@ describe('invite → accept', () => {
     await expect(
       invitationService.invite(adminCtx, {
         email: INVITEE,
-        roleIds: [developerRoleId],
+        roleIds: [engineerRoleId],
         projectGrants: [],
       }),
     ).rejects.toThrow()
@@ -260,7 +261,7 @@ describe('invite → accept', () => {
   it('audits the invitation with the acting admin', async () => {
     const { invitation } = await invitationService.invite(adminCtx, {
       email: INVITEE,
-      roleIds: [developerRoleId],
+      roleIds: [engineerRoleId],
       projectGrants: [],
     })
 

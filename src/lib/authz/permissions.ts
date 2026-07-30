@@ -265,10 +265,21 @@ export const GLOBAL_ONLY_PERMISSIONS: ReadonlySet<string> = new Set(
 // ---------------------------------------------------------------------------
 
 /**
- * Seeded once by prisma/seeds/roles.seed.ts. After seeding these are ordinary
- * documents: an admin can change Developer's permissions, or add a Release
- * Manager, without touching this file. QA / DevOps / Release Manager are
- * included as worked examples that the requirements named.
+ * Seeded once. After seeding these are ordinary documents: an admin can change
+ * Engineer's permissions, or add a role of their own, without touching this file.
+ *
+ * ── Why five, and why these five ─────────────────────────────────────────────
+ * Roles are named after the DECISIONS a person is trusted to make, not the
+ * resources they touch — resources are what permissions are for. The earlier set
+ * (developer / qa / devops / release-manager) split three roles across what was
+ * really two permissions, so `devops` folded into Release Manager and `developer`
+ * became Engineer. `viewer` is new: read-only had no expression at all, so
+ * stakeholders were given a role that could tick items.
+ *
+ * Only the super-admin role holds a wildcard. Ordinary roles list permissions
+ * explicitly, because a role granting `deployment.*` silently acquires every
+ * permission added to that resource later — the role would stop meaning what it
+ * meant when someone approved it. See docs/14 §14.4.
  */
 export const SEED_ROLES = [
   {
@@ -281,56 +292,9 @@ export const SEED_ROLES = [
     isSuperAdmin: true,
   },
   {
-    key: 'developer',
-    name: 'Developer',
-    description: 'Runs deployments. Cannot modify checklist templates.',
-    color: '#4fc7e8',
-    isDefault: true,
-    permissions: [
-      PERMISSIONS.project.read,
-      PERMISSIONS.template.read,
-      PERMISSIONS.deployment.read, PERMISSIONS.deployment.create,
-      PERMISSIONS.deployment.edit, PERMISSIONS.deployment.start,
-      PERMISSIONS.deployment.execute, PERMISSIONS.deployment.fail,
-      PERMISSIONS.deployment.cancel, PERMISSIONS.deployment.export,
-      PERMISSIONS.comment.read, PERMISSIONS.comment.create,
-      PERMISSIONS.comment.editOwn, PERMISSIONS.comment.deleteOwn,
-      // Deliberately absent: deployment.complete and deployment.production.
-      // Closing a release and shipping to production are separable decisions —
-      // the four-eyes default. Grant them if that is not your model.
-    ],
-  },
-  {
-    key: 'qa',
-    name: 'QA',
-    description: 'Verifies checklist items and signs off testing.',
-    color: '#f0b54c',
-    permissions: [
-      PERMISSIONS.project.read, PERMISSIONS.template.read,
-      PERMISSIONS.deployment.read, PERMISSIONS.deployment.execute,
-      PERMISSIONS.comment.read, PERMISSIONS.comment.create, PERMISSIONS.comment.editOwn,
-    ],
-  },
-  {
-    key: 'devops',
-    name: 'DevOps',
-    description: 'Owns infrastructure items and production execution.',
-    color: '#35d68f',
-    permissions: [
-      PERMISSIONS.project.read, PERMISSIONS.template.read,
-      PERMISSIONS.deployment.read, PERMISSIONS.deployment.create,
-      PERMISSIONS.deployment.start, PERMISSIONS.deployment.execute,
-      PERMISSIONS.deployment.complete, PERMISSIONS.deployment.fail,
-      PERMISSIONS.deployment.rollback, PERMISSIONS.deployment.production,
-      PERMISSIONS.deployment.itemSkip, PERMISSIONS.deployment.export,
-      PERMISSIONS.comment.read, PERMISSIONS.comment.create, PERMISSIONS.comment.editOwn,
-      PERMISSIONS.environment.manage,
-    ],
-  },
-  {
     key: 'release-manager',
     name: 'Release Manager',
-    description: 'Owns the release gate and template content.',
+    description: 'Owns templates, the release gate and production.',
     color: '#a78bfa',
     permissions: [
       PERMISSIONS.project.read, PERMISSIONS.project.edit, PERMISSIONS.project.templateAssign,
@@ -341,10 +305,75 @@ export const SEED_ROLES = [
       PERMISSIONS.deployment.complete, PERMISSIONS.deployment.cancel,
       PERMISSIONS.deployment.fail, PERMISSIONS.deployment.rollback,
       PERMISSIONS.deployment.production, PERMISSIONS.deployment.export,
+      PERMISSIONS.deployment.execute,
       PERMISSIONS.deployment.itemSkip, PERMISSIONS.deployment.itemUncheckOther,
       PERMISSIONS.comment.read, PERMISSIONS.comment.create,
       PERMISSIONS.comment.editOwn, PERMISSIONS.comment.moderate,
-      PERMISSIONS.audit.read,
+      // Templates live under /admin, and every admin page checks admin.access.
+      PERMISSIONS.admin.access,
+      PERMISSIONS.audit.read, PERMISSIONS.environment.manage, PERMISSIONS.settings.read,
+      PERMISSIONS.notification.read, PERMISSIONS.notification.retry,
+      // Deliberately absent: role.manage, user.*, settings.manage, and every
+      // delete. This role ships software; it does not administer the organisation.
+    ],
+  },
+  {
+    key: 'engineer',
+    name: 'Engineer',
+    description: 'Runs releases outside production. Cannot edit templates.',
+    color: '#4fc7e8',
+    isDefault: true,
+    permissions: [
+      PERMISSIONS.project.read,
+      PERMISSIONS.template.read,
+      PERMISSIONS.deployment.read, PERMISSIONS.deployment.create,
+      PERMISSIONS.deployment.edit, PERMISSIONS.deployment.start,
+      PERMISSIONS.deployment.complete, PERMISSIONS.deployment.fail,
+      PERMISSIONS.deployment.cancel, PERMISSIONS.deployment.export,
+      PERMISSIONS.deployment.execute,
+      PERMISSIONS.comment.read, PERMISSIONS.comment.create,
+      PERMISSIONS.comment.editOwn, PERMISSIONS.comment.deleteOwn,
+      /**
+       * Holds `complete`, unlike the `developer` role it replaces.
+       *
+       * `deployment.production` is checked IN ADDITION to whatever else is being
+       * asked for whenever the target environment is flagged `isProduction`. So
+       * this role already cannot perform any action on a production run.
+       * Withholding `complete` therefore bought no production safety — it only
+       * forced a second person to close every staging run.
+       *
+       * Restore the four-eyes split by removing `complete` here, if reviewing the
+       * close of a NON-production release is something you actually want.
+       *
+       * Deliberately absent: production, rollback, item.skip, item.override.
+       */
+    ],
+  },
+  {
+    key: 'qa',
+    name: 'QA',
+    description: 'Verifies checklist items. Cannot create or close a release.',
+    color: '#f0b54c',
+    permissions: [
+      PERMISSIONS.project.read, PERMISSIONS.template.read,
+      PERMISSIONS.deployment.read, PERMISSIONS.deployment.execute,
+      PERMISSIONS.comment.read, PERMISSIONS.comment.create, PERMISSIONS.comment.editOwn,
+    ],
+  },
+  {
+    key: 'viewer',
+    name: 'Viewer',
+    description: 'Read-only. For stakeholders watching a release.',
+    color: '#7d8ba3',
+    permissions: [
+      // No execute, no create, no comment.create. The point of this role is that
+      // there is nothing it can change — managers and new joiners need to follow a
+      // release without any possibility of altering it, and previously the closest
+      // available role could tick items.
+      PERMISSIONS.project.read,
+      PERMISSIONS.template.read,
+      PERMISSIONS.deployment.read,
+      PERMISSIONS.comment.read,
     ],
   },
 ] as const

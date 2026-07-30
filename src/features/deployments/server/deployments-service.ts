@@ -2,7 +2,7 @@ import 'server-only'
 
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
-import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
+import { type RequestContext, projectFilter, requirePermission } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { db } from '@/lib/db/prisma'
 
@@ -12,13 +12,23 @@ import type {
   CreateCommentInput,
 } from '../schemas/deployments.schema'
 
-/// Only projects the caller is a member of. Applied to every read and write so a
-/// valid id from another project is still a miss.
-function memberScope(ctx: RequestContext) {
+/**
+ * Projects the caller may act on. Applied to every read and write, so a valid id
+ * from a project they cannot see is still a miss.
+ *
+ * Was `memberships: { some: { userId } }`, which ignored permissions and could not
+ * honour the super-admin short-circuit that lives in `can()` — see docs/14 §14.1.
+ * Now derived from the permission the caller actually needs.
+ *
+ * The scope goes in `AND` rather than being spread at the top level because
+ * callers add their own `id`, and a spread `{ id: { in: [...] } }` would silently
+ * replace it — turning "this project, if permitted" into "any permitted project".
+ */
+function visibleProject(ctx: RequestContext, permission: string) {
   return {
     organizationId: ctx.organizationId,
     deletedAt: null,
-    memberships: { some: { userId: ctx.actorId, deletedAt: null } },
+    AND: [projectFilter(ctx, permission, 'id')],
   }
 }
 
@@ -27,7 +37,11 @@ export class DeploymentsService {
     requirePermission(ctx, PERMISSIONS.deployment.read)
 
     return db.deploymentRun.findMany({
-      where: { projectId, project: memberScope(ctx), deletedAt: null },
+      where: {
+        projectId,
+        project: visibleProject(ctx, PERMISSIONS.deployment.read),
+        deletedAt: null,
+      },
       include: {
         environment: true,
         _count: { select: { itemStates: true, comments: true } },
@@ -40,7 +54,11 @@ export class DeploymentsService {
     requirePermission(ctx, PERMISSIONS.deployment.read)
 
     return db.deploymentRun.findFirstOrThrow({
-      where: { id, project: memberScope(ctx), deletedAt: null },
+      where: {
+        id,
+        project: visibleProject(ctx, PERMISSIONS.deployment.read),
+        deletedAt: null,
+      },
       include: {
         project: true,
         environment: true,
@@ -58,7 +76,7 @@ export class DeploymentsService {
     requirePermission(ctx, PERMISSIONS.deployment.create)
 
     const project = await db.project.findFirstOrThrow({
-      where: { id: input.projectId, ...memberScope(ctx) },
+      where: { id: input.projectId, ...visibleProject(ctx, PERMISSIONS.deployment.create) },
       select: { id: true, key: true, environmentIds: true },
     })
 
@@ -195,9 +213,14 @@ export class DeploymentsService {
   ) {
     requirePermission(ctx, PERMISSIONS.deployment.execute)
 
-    // Scoped by deployment AND membership so an id from another project misses.
+    // Scoped by deployment AND project visibility so an id from a project the
+    // caller cannot execute in is still a miss.
     const deployment = await db.deploymentRun.findFirstOrThrow({
-      where: { id: deploymentId, project: memberScope(ctx), deletedAt: null },
+      where: {
+        id: deploymentId,
+        project: visibleProject(ctx, PERMISSIONS.deployment.execute),
+        deletedAt: null,
+      },
       select: { id: true, status: true, checklist: true },
     })
 
@@ -278,7 +301,11 @@ export class DeploymentsService {
     requirePermission(ctx, PERMISSIONS.comment.create)
 
     const deployment = await db.deploymentRun.findFirstOrThrow({
-      where: { id: deploymentId, project: memberScope(ctx), deletedAt: null },
+      where: {
+        id: deploymentId,
+        project: visibleProject(ctx, PERMISSIONS.comment.create),
+        deletedAt: null,
+      },
       select: { id: true },
     })
 

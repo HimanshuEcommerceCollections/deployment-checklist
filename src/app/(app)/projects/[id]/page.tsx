@@ -42,12 +42,15 @@ export default async function ProjectPage(props: { params: Promise<{ id: string 
       )}
 
       <div className="grid gap-6 md:grid-cols-3">
+        {/* Access is org-wide: it comes from the actor's role, not from a
+            per-project membership. A "Members: 0" tile would read as "nobody has
+            access" when in fact everyone with the permission does. See docs/14. */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm font-medium">Members</CardTitle>
+            <CardTitle className="text-sm font-medium">Access</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{project.memberships?.length || 0}</p>
+            <p className="text-2xl font-bold">Org-wide</p>
           </CardContent>
         </Card>
 

@@ -1,4 +1,6 @@
 import { getRequestContext } from '@/server/context'
+import { projectFilter } from '@/lib/authz/authorize'
+import { PERMISSIONS } from '@/lib/authz/permissions'
 import { db } from '@/lib/db/prisma'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -12,14 +14,17 @@ export default async function ProjectTemplatesPage(props: {
   const params = await props.params
   const ctx = await getRequestContext()
 
-  let project: any
   try {
-    project = await db.project.findFirstOrThrow({
+    // Existence check only — the id in the URL must resolve to a project this
+    // actor may read. `AND` keeps the scope from overwriting the `id` above.
+    await db.project.findFirstOrThrow({
       where: {
         id: params.id,
         organizationId: ctx.organizationId,
-        memberships: { some: { userId: ctx.actorId, deletedAt: null } },
+        deletedAt: null,
+        AND: [projectFilter(ctx, PERMISSIONS.project.read, 'id')],
       },
+      select: { id: true },
     })
   } catch {
     notFound()

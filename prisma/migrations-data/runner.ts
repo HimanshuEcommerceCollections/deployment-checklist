@@ -19,6 +19,8 @@ import { createHash } from 'node:crypto'
 
 import { PrismaClient } from '@prisma/client'
 
+import { SEED_ROLES } from '../../src/lib/authz/permissions'
+
 const db = new PrismaClient()
 
 interface Migration {
@@ -230,6 +232,99 @@ const MIGRATIONS: Migration[] = [
 
       const pruned = roles.nModified ?? 0
       if (pruned > 0) console.log(`      roles.permissions: pruned on ${pruned} role(s)`)
+    },
+  },
+  {
+    name: '0006-consolidate-seed-roles',
+    /**
+     * Move each organisation onto the consolidated role set (docs/14 §14.3).
+     *
+     * `developer` and `devops` are retired: `developer` became `engineer` (same
+     * job, plus `deployment.complete`) and `devops` folded into `release-manager`.
+     *
+     * Two things the seed cannot do, which is why this exists:
+     *
+     *   1. The seed's update branch only re-syncs permissions for `isSystem`
+     *      roles — everything else is left alone so an admin's edits survive
+     *      re-seeding. Correct as a rule, but it means `release-manager` would
+     *      keep its old permission list for ever.
+     *   2. The seed only ever upserts. It has no notion of a role that should no
+     *      longer exist.
+     *
+     * A retired role is soft-deleted ONLY when nobody holds it. Stripping a role
+     * out from under a live user would silently revoke their access, and no
+     * automatic remap is safe: every candidate successor grants strictly more or
+     * strictly less than what they had. So a held role survives and is reported
+     * for an admin to reassign deliberately.
+     */
+    up: async (client) => {
+      const RETIRED: Record<string, string> = {
+        developer: 'engineer',
+        devops: 'release-manager',
+      }
+
+      const organizations = await client.organization.findMany({ select: { id: true } })
+
+      for (const org of organizations) {
+        // Bring the current set into line with the code catalog. Safe to force:
+        // these are the definitions the code ships, and a role an admin renamed
+        // or re-scoped keeps its identity — only permissions are authoritative here.
+        for (const role of SEED_ROLES) {
+          await client.role.upsert({
+            where: { organizationId_key: { organizationId: org.id, key: role.key } },
+            create: {
+              organizationId: org.id,
+              key: role.key,
+              name: role.name,
+              description: role.description,
+              color: role.color,
+              permissions: [...role.permissions],
+              isSystem: 'isSystem' in role ? role.isSystem : false,
+              isSuperAdmin: 'isSuperAdmin' in role ? role.isSuperAdmin : false,
+              isDefault: 'isDefault' in role ? role.isDefault : false,
+              deletedAt: null,
+            },
+            update: {
+              name: role.name,
+              description: role.description,
+              permissions: [...role.permissions],
+              isDefault: 'isDefault' in role ? role.isDefault : false,
+              deletedAt: null,
+            },
+          })
+        }
+
+        for (const [retiredKey, successorKey] of Object.entries(RETIRED)) {
+          const retired = await client.role.findFirst({
+            where: { organizationId: org.id, key: retiredKey, deletedAt: null },
+            select: { id: true, key: true },
+          })
+          if (!retired) continue
+
+          const holders = await client.user.findMany({
+            where: { organizationId: org.id, roleIds: { has: retired.id }, deletedAt: null },
+            select: { email: true },
+          })
+          const memberships = await client.membership.count({
+            where: { roleId: retired.id, deletedAt: null },
+          })
+
+          if (holders.length > 0 || memberships > 0) {
+            const who = holders.map((h) => h.email).join(', ') || `${memberships} membership(s)`
+            console.log(
+              `      kept "${retired.key}" — still assigned to ${who}. ` +
+                `Reassign to "${successorKey}" in the admin UI, then re-run.`,
+            )
+            continue
+          }
+
+          await client.role.update({
+            where: { id: retired.id },
+            data: { deletedAt: new Date() },
+          })
+          console.log(`      retired "${retired.key}" → superseded by "${successorKey}"`)
+        }
+      }
     },
   },
 ]
