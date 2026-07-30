@@ -147,15 +147,12 @@ page.tsx                                                            S
 │   │   ├─ <CommentList>                            S  markdown → sanitised HTML
 │   │   │   └─ <CommentItem>                        S  ← <CommentActions> C island
 │   │   └─ <CommentComposer>                        C  RHF + markdown editor
-│   ├─ <AttachmentPanel deploymentId>                               S
-│   │   ├─ <AttachmentList>                         S
-│   │   └─ <FileDropzone>                           C  presigned direct upload
 │   └─ <DeploymentTimeline deploymentId>                            S  audit-derived
 │
 └─ <ReleaseNotesCard run>                                           S  markdown
 ```
 
-The client/server split follows one rule: **a component is a Client Component only if it owns state, handles an event, or uses a browser API.** In the tree above that is the console island (optimistic checklist state), the toolbar (filters), and the form/action islands. Comment bodies, timelines, attachment lists, headers, and markdown rendering are all server-rendered — none of that logic or its dependencies enter the client bundle. Markdown rendering server-side in particular keeps a sanitiser and a parser (~40 KB gzipped) out of the browser entirely.
+The client/server split follows one rule: **a component is a Client Component only if it owns state, handles an event, or uses a browser API.** In the tree above that is the console island (optimistic checklist state), the toolbar (filters), and the form/action islands. Comment bodies, timelines, headers, and markdown rendering are all server-rendered — none of that logic or its dependencies enter the client bundle. Markdown rendering server-side in particular keeps a sanitiser and a parser (~40 KB gzipped) out of the browser entirely.
 
 ### Shell
 
@@ -331,7 +328,7 @@ One schema, three consumers: client validation, action validation, service valid
 
 **Server Components by default.** A component becomes `'use client'` only for state, events, or browser APIs. In the console tree that is roughly six components out of thirty.
 
-**Streaming.** The console renders as soon as the run and item states are loaded; comments, attachments, and the timeline stream in behind `<Suspense>`. The checklist — the reason the page exists — is never blocked by a comment query.
+**Streaming.** The console renders as soon as the run and item states are loaded; comments and the timeline stream in behind `<Suspense>`. The checklist — the reason the page exists — is never blocked by a comment query.
 
 **Skeletons match real geometry.** `loading.tsx` renders the header, gauge, and panel shapes at their real sizes, so nothing shifts when data arrives.
 

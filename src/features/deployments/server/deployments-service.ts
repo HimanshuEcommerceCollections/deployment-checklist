@@ -222,8 +222,8 @@ export class DeploymentsService {
 
     if (input.checked && snapshotItem?.evidenceRequired) {
       const note = input.note ?? current.note
-      if (!note && current.attachmentIds.length === 0) {
-        throw new Error(`"${snapshotItem.label}" requires a note or attachment as evidence.`)
+      if (!note) {
+        throw new Error(`"${snapshotItem.label}" requires a note as evidence.`)
       }
     }
 

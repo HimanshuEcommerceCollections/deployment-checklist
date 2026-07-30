@@ -101,7 +101,7 @@ Build order and remaining phases: [ARCHITECTURE.md](ARCHITECTURE.md#suggested-bu
 - Navigation generated from permissions
 - Append-only audit trail with redaction
 - Notification outbox with retries and backoff
-- Email + storage provider abstractions
+- Email provider abstraction
 - Tailwind v4 theme from the reference design, dark + light
 
 </td><td valign="top">
@@ -119,7 +119,7 @@ Build order and remaining phases: [ARCHITECTURE.md](ARCHITECTURE.md#suggested-bu
 </table>
 
 **Not built yet** (by design — see the build order): projects/templates/deployments CRUD,
-the deployment console, comments, attachments, history, dashboard metrics, admin panel.
+the deployment console, comments, history, dashboard metrics, admin panel.
 The dashboard is a placeholder that deliberately does **not** fake its stat tiles.
 
 ---
@@ -134,7 +134,7 @@ docs/                       01–13 architecture documents
 src/app/                    routes only — no business logic
 src/features/               vertical slices: auth (+ projects, templates, deployments to come)
 src/domain/                 pure business rules; no Prisma, React or Next imports
-src/lib/                    authz · audit · notifications · storage · db · http · crypto
+src/lib/                    authz · audit · notifications · db · http · crypto
 src/components/             ui/ (shadcn) + layout composites
 scripts/                    dev-db · doctor · smoke · load-env · grant:admin
 tests/                      unit (pure) + integration (real database)

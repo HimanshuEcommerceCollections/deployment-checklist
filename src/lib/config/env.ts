@@ -139,18 +139,6 @@ const serverSchema = z
     EMAIL_API_KEY: optional(z.string()),
     AWS_REGION: optional(z.string()),
 
-    // ── Storage ──────────────────────────────────────────────────────────
-    STORAGE_PROVIDER: z.enum(['local', 's3', 'azure', 'gcs', 'memory']).default('local'),
-    STORAGE_LOCAL_ROOT: z.string().default('./storage'),
-    STORAGE_PREFIX: z.string().default('uploads'),
-    MAX_UPLOAD_MB: z.coerce.number().int().positive().max(500).default(25),
-    S3_BUCKET: optional(z.string()),
-    S3_REGION: optional(z.string()),
-    S3_ENDPOINT: optional(z.string()),
-    S3_ACCESS_KEY_ID: optional(z.string()),
-    S3_SECRET_ACCESS_KEY: optional(z.string()),
-    S3_FORCE_PATH_STYLE: boolish.default('false'),
-
     // ── Infrastructure ───────────────────────────────────────────────────
     REDIS_URL: optional(z.string()),
     SEARCH_BACKEND: z.enum(['atlas', 'regex']).default('regex'),
@@ -201,17 +189,6 @@ const serverSchema = z
       }
     }
 
-    if (cfg.STORAGE_PROVIDER === 's3') {
-      for (const key of ['S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const) {
-        if (!cfg[key]) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [key],
-            message: `${key} is required when STORAGE_PROVIDER="s3".`,
-          })
-        }
-      }
-    }
 
     // Production POLICY guards — runtime only.
     // Skipped during `next build` because a build machine legitimately has no

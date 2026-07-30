@@ -91,10 +91,6 @@ export default async function UsagePage() {
             <span>1.2 GB</span>
           </div>
           <div className="flex justify-between">
-            <span>Attachments</span>
-            <span>0.8 GB</span>
-          </div>
-          <div className="flex justify-between">
             <span>Backups</span>
             <span>0.4 GB</span>
           </div>

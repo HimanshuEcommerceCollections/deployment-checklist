@@ -1,6 +1,6 @@
 # 8 — Abstractions
 
-Covers deliverables **11** (email) and **12** (file storage), plus the same pattern applied to the remaining external dependencies.
+Covers deliverable **11** (email), plus the same pattern applied to the remaining external dependencies.
 
 Every abstraction here follows one shape:
 
@@ -14,7 +14,7 @@ Port (interface)      the contract — lives in src/lib/<name>/types.ts
 Adapters             dumb: no permissions, no DB, no retry, no policy
 ```
 
-Adapters are constructed in exactly one place, [src/server/container.ts](../src/server/container.ts). Anywhere else `new S3Provider()` appears, the abstraction has already leaked.
+Adapters are constructed in exactly one place, [src/server/container.ts](../src/server/container.ts). Anywhere else `new GmailSmtpProvider()` appears, the abstraction has already leaked.
 
 ---
 
@@ -191,121 +191,7 @@ If `EMAIL_CONFIG_SOURCE=env`, step three is `EMAIL_PROVIDER` in the environment 
 
 ---
 
-## 2. File storage
-
-Code: [src/lib/storage/types.ts](../src/lib/storage/types.ts)
-
-### The rule that makes providers swappable
-
-**The database stores `provider` + `storageKey`. It never stores a URL.**
-
-A stored URL bakes in a hostname, a bucket, a signing scheme, and an expiry. Move from local disk to S3 and every row is wrong. Rotate a CDN domain and every row is wrong. Persist a signed URL and it is expired precisely when someone needs it. Resolving at read time makes a backend switch a settings change plus a copy job, with zero rows touched.
-
-```ts
-// Attachment row
-{ provider: 's3', storageKey: 'uploads/6501…/deployment/6502…/6503…/qa-report.pdf',
-  fileName: 'QA Report (Final).pdf', contentType: 'application/pdf',
-  detectedType: 'application/pdf', sizeBytes: 284_193, checksum: 'sha256:…' }
-
-// Read time
-const url = await storage.getSignedUrl(attachment.storageKey, {
-  expiresIn: 300, downloadFileName: attachment.fileName,
-})
-```
-
-`fileName` is preserved separately from `storageKey`, so the user's `QA Report (Final).pdf` downloads under that name while the key stays boring and safe.
-
-### Key shape
-
-```
-uploads/<orgId>/<scope>/<scopeId>/<fileId>/<sanitised-name>
-```
-
-Four properties, each load-bearing:
-
-1. **No traversal.** The only user-influenced segment is the last, aggressively sanitised. `../../etc/passwd` cannot escape.
-2. **No collisions.** `fileId` is unique, so two people uploading `report.pdf` to the same deployment do not overwrite each other. Keying by content hash would silently deduplicate genuinely different files with the same name.
-3. **Prefix-deletable.** Removing a deployment's files is one prefix delete.
-4. **Tenant-partitioned.** `orgId` leads, so a future per-tenant bucket or lifecycle rule needs no re-keying.
-
-### Two upload paths
-
-`supportsPresignedUpload` is on the interface because the answer differs by environment and the UI must branch at runtime:
-
-```
-Small file (< 4 MB) or a provider without presigning
-   browser ─▶ Server Action ─▶ validate ─▶ storage.put() ─▶ Attachment row
-
-Large file, provider supports presigning          ← required on Vercel
-   browser ─▶ POST /api/files/presign      permission + size + MIME pre-check
-           ◀─ { uploadUrl, fields, attachmentId }
-   browser ─▶ PUT direct to S3             bytes never touch our server
-           ─▶ POST /api/files/:id/confirm  head() to verify size, sniff type, activate row
-```
-
-The presigned path exists because **Vercel caps request bodies at 4.5 MB**. A 20 MB test report cannot be proxied through a Server Action, full stop.
-
-The `confirm` step is not optional. A presigned URL is a capability handed to a client, and the client may upload something other than what it declared. `confirm` runs `head()` to check the real size and sniffs the first bytes for the real type; a mismatch deletes the object and refuses the row. Without it, the presign endpoint is an open, validation-free upload.
-
-### Validation
-
-```
-1. Extension check    BLOCKED_EXTENSIONS — refused regardless of configuration
-2. MIME allowlist     Setting.allowedMimeTypes
-3. Size               Setting.maxUploadMb, enforced server-side
-4. Magic bytes        file-type sniff — THE authority
-5. Mismatch           declared ≠ detected → reject
-6. Virus scan         optional ClamAV/API hook; scanStatus gates download
-```
-
-Step 4 is the one that matters. `Content-Type` is a hint supplied by the uploader. A file declared `image/png` whose first bytes are `MZ` or `<!DOCTYPE html` is either an attack or a mistake, and must not be stored and later served back.
-
-`BLOCKED_EXTENSIONS` refuses `.html`, `.svg`, and `.xml` even though they look harmless. An HTML file served from our origin is stored XSS with the victim's session attached; SVG is scriptable and is the classic bypass of an "images only" allowlist. A deployment checklist has no legitimate need for either.
-
-### Download authorization
-
-Every download is authorized. There are no public object URLs for attachments.
-
-```ts
-// GET /api/files/:attachmentId
-const attachment = await db.attachment.findFirst({ where: { id, deletedAt: null } })
-if (!attachment) return notFound()
-
-// 404, not 403 — a 403 on an existing file confirms it exists to someone with
-// no right to know that.
-requirePermission(ctx, PERMISSIONS.attachment.read, { projectId: resolveProjectId(attachment) })
-
-if (attachment.scanStatus === 'infected') return forbidden('This file failed a security scan.')
-
-const provider = storageFor(attachment.provider)   // ← the ROW's provider, not the current default
-return provider.supportsSignedDownload
-  ? redirect(await provider.getSignedUrl(attachment.storageKey, { expiresIn: 300, downloadFileName: attachment.fileName }))
-  : streamThrough(await provider.getStream(attachment.storageKey), attachment)
-```
-
-Reading `provider` **from the row** rather than from current settings is what makes migration incremental: old objects keep resolving through their original backend while new uploads land on the new one. No big-bang copy required.
-
-Proxied streams set `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and a restrictive `Content-Security-Policy`, so even a mis-typed file cannot execute in our origin.
-
-### Lifecycle
-
-Deleting an attachment sets `deletedAt`. The object is **not** removed immediately — an accidental delete during a release is exactly when you want it back. The nightly reaper purges provider objects for rows soft-deleted more than `attachmentPurgeDays` ago (default 30) and sets `purgedAt`.
-
-The reaper also handles the other direction: `list()` finds objects with no matching row — abandoned presigns, failed confirms — and removes them after a grace period. Without it, presigned uploads leak storage indefinitely.
-
-### Migrating providers
-
-1. Configure the new provider; leave `storageProvider` pointing at the old one.
-2. Copy objects (`aws s3 sync`, `azcopy`, `rclone`).
-3. Backfill `provider` on migrated rows via a data migration.
-4. Flip `storageProvider`. New uploads go to the new backend; unmigrated rows still resolve through the old one, because each row names its own provider.
-5. Decommission once the old provider has no rows.
-
-Zero downtime, reversible at every step.
-
----
-
-## 3. The remaining ports
+## 2. The remaining ports
 
 Same pattern, smaller surface.
 
@@ -355,7 +241,7 @@ Published from `after()` so handlers run post-response. Current subscribers: not
 
 ---
 
-## 4. When *not* to abstract
+## 3. When *not* to abstract
 
 Abstraction has a real cost: indirection, more files, a layer to hold in your head. It earns that cost when there is a concrete second implementation on the horizon, when the dependency is slow or non-deterministic in tests, or when it is a compliance/vendor risk.
 
@@ -367,4 +253,4 @@ Deliberately **not** abstracted here:
 - **The permission engine.** It is domain logic, not infrastructure. There is no second implementation.
 - **Date formatting.** `date-fns` in a couple of helpers. Wrapping it protects against nothing.
 
-The test: *can you name the second implementation, and would you plausibly build it?* Gmail → Resend, yes. Local → S3, yes. Prisma → something else, no.
+The test: *can you name the second implementation, and would you plausibly build it?* Gmail → Resend, yes. Prisma → something else, no.

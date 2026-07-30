@@ -47,7 +47,7 @@ Each of these came up while designing something you *did* ask for.
 
 **Required vs optional items.** Your ten HTML sections mix "PR approved" (blocking) with "Load testing done (if traffic-sensitive change)" (conditional). Without `isRequired`, the completion gate is all-or-nothing and teams either can't complete or stop taking it seriously. `isRequired` + three completion policies.
 
-**Evidence on items.** "Backup taken immediately before migration runs" is the item you most want proof of. `evidenceRequired` forces a note or attachment before it can be ticked, with `deployment.item.override` for the exception. This turns the checklist from a claim into a record.
+**Evidence on items.** "Backup taken immediately before migration runs" is the item you most want proof of. `evidenceRequired` forces a note before it can be ticked, with `deployment.item.override` for the exception. This turns the checklist from a claim into a record.
 
 **A human-readable reference.** `APEX-142`, not `6503f9a1b2c8e4d5f6a7b8c9`. People discuss deployments in Slack and tickets. An ObjectId cannot be said out loud. `(projectId, sequence)` with an atomic `$inc`.
 
@@ -180,7 +180,6 @@ Atlas continuous backup with PITR, retention ≥ 30 days. Then the part everyone
 Two specifics for this system:
 
 - **`audit_logs` is the collection where losing an hour genuinely hurts.** Name it explicitly in the drill.
-- **File storage is not in the database backup.** S3 versioning plus a lifecycle rule, or the drill restores a database whose attachments all 404.
 
 ---
 
@@ -225,7 +224,7 @@ Eight phases, each shipping something demonstrable and leaving the system deploy
 | **2. Projects & environments** | CRUD, soft delete + restore, memberships | deployments need a project |
 | **3. Templates** | template + versions, embedded editor, reorder, duplicate, publish, diff | deployments need a template to snapshot |
 | **4. The console** | run creation + snapshot, item states, optimistic toggles, gauge, gate, state machine | the product; the HTML made real |
-| **5. Collaboration** | comments, attachments, timeline | fits the page already built |
+| **5. Collaboration** | comments, timeline | fits the page already built |
 | **6. Visibility** | history grid, dashboard, global search | needs phase 4 data to be meaningful |
 | **7. Admin & settings** | users, roles, environments, settings, audit viewer, trash | the surface over everything above |
 | **8. Hardening** | rate limits, CSP, a11y audit, load test, rollups, runbook, restore drill | last, but before go-live |

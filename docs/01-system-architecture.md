@@ -82,7 +82,7 @@ export interface DeploymentServiceDeps {
 
 ### Infrastructure — `src/infrastructure/`, `src/lib/db/`
 
-The only place `@prisma/client` may be imported, plus every adapter: `GmailSmtpProvider`, `S3StorageProvider`, `RedisRateLimiter`, `MongoRateLimiter`, `ReactEmailRenderer`. Each implements a port. Swapping one is a one-line change in the container.
+The only place `@prisma/client` may be imported, plus every adapter: `GmailSmtpProvider`, `RedisRateLimiter`, `MongoRateLimiter`, `ReactEmailRenderer`. Each implements a port. Swapping one is a one-line change in the container.
 
 ### Presentation — `src/app/`, `src/components/`, `src/features/*/components/`
 
@@ -143,7 +143,7 @@ GET /projects/apex/deployments/APEX-142
    │      → ChecklistItemState fetched once, keyed by itemId
    │      → readiness computed in the domain layer, server-side
    │
-   ├─ <Suspense> boundaries stream comments, attachments, timeline independently
+   ├─ <Suspense> boundaries stream comments and timeline independently
    │
    └─ Client islands hydrate: <ChecklistItemToggle>, <StatusActions>, <CommentForm>
 ```
@@ -188,7 +188,6 @@ The optimistic guard on `revision` is what makes concurrent editing safe. `updat
 | Edge | `middleware.ts` only | Cheap JWT presence/signature check for routing; never authorization |
 | Database | MongoDB Atlas M10+, **replica set** | Prisma interactive transactions require it; PITR needs a paid tier |
 | Cache | Next.js Data Cache + tags; optional Upstash Redis | Redis becomes necessary for rate limits at multi-instance scale |
-| Files | `local` in dev → S3-compatible in prod | Behind `StorageProvider`; swap is config-only |
 | Email | Gmail SMTP → Resend/SES | Behind `EmailProvider`; outbox makes the cutover invisible |
 | Background | Vercel Cron (or a small worker container) | Outbox drain, rollups, sweeps, orphan reaper |
 
@@ -199,7 +198,6 @@ The optimistic guard on `revision` is what makes concurrent editing safe. `updat
 | `outbox:drain` | every minute | Claim `PENDING` rows past `nextAttemptAt`, send, backoff on failure |
 | `stats:rollup` | hourly + nightly reconcile | Maintain `DeploymentDailyStat` |
 | `tokens:sweep` | hourly | Expire invitations, purge consumed `AuthToken`s |
-| `files:reap` | nightly | Delete provider objects for attachments soft-deleted > N days |
 | `locks:sweep` | every 5 min | Release `JobLock` rows past `expiresAt` |
 | `audit:archive` | nightly (opt-in) | Cold-storage export when `auditRetentionDays > 0` |
 

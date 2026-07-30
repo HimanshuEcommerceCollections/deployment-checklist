@@ -91,7 +91,7 @@ const MIGRATIONS: Migration[] = [
       const collections = [
         'organizations', 'environments', 'users', 'roles', 'memberships',
         'projects', 'checklist_templates', 'template_versions',
-        'project_templates', 'deployment_runs', 'deployment_comments', 'attachments',
+        'project_templates', 'deployment_runs', 'deployment_comments',
       ]
 
       for (const collection of collections) {
@@ -109,6 +109,127 @@ const MIGRATIONS: Migration[] = [
         const modified = result.nModified ?? 0
         if (modified > 0) console.log(`      ${collection}: stamped ${modified} document(s)`)
       }
+    },
+  },
+  {
+    name: '0004-drop-attachments',
+    /**
+     * Remove the attachments feature from existing databases.
+     *
+     * `prisma db push` only reconciles indexes on MongoDB — dropping a model from
+     * the schema leaves its collection, its documents, and the now-orphaned
+     * fields on other collections exactly where they were. Prisma simply stops
+     * reading them, so the data lingers indefinitely and a future `db push`
+     * never mentions it.
+     *
+     * The feature was interface-only: no provider was ever implemented, so
+     * `attachmentIds` was never written and the collection is expected to be
+     * empty. The count is logged rather than assumed, because a database that
+     * somehow does hold rows should say so before they are dropped.
+     */
+    up: async (client) => {
+      const counted = (await client.$runCommandRaw({
+        count: 'attachments',
+        query: {},
+      })) as { n?: number }
+
+      const docs = counted.n ?? 0
+      if (docs > 0) {
+        console.log(`      attachments: dropping collection holding ${docs} document(s)`)
+      }
+
+      // Dropping a non-existent collection is error 26 (NamespaceNotFound) —
+      // expected on a fresh database, and the reason this is not fatal.
+      try {
+        await client.$runCommandRaw({ drop: 'attachments' })
+        console.log('      attachments: collection dropped')
+      } catch (error) {
+        const code = (error as { code?: unknown }).code
+        if (String(code) !== '26' && !/NamespaceNotFound/i.test(String(error))) throw error
+      }
+
+      const orphans: Array<[string, string]> = [
+        ['checklist_item_states', 'attachmentIds'],
+        ['deployment_runs', 'attachmentCount'],
+        ['settings', 'storageProvider'],
+        ['settings', 'storageBucket'],
+        ['settings', 'storageRegion'],
+        ['settings', 'storagePrefix'],
+        ['settings', 'maxUploadMb'],
+        ['settings', 'allowedMimeTypes'],
+      ]
+
+      for (const [collection, field] of orphans) {
+        const result = (await client.$runCommandRaw({
+          update: collection,
+          updates: [
+            {
+              q: { [field]: { $exists: true } },
+              u: { $unset: { [field]: '' } },
+              multi: true,
+            },
+          ],
+        })) as { nModified?: number }
+
+        const modified = result.nModified ?? 0
+        if (modified > 0) {
+          console.log(`      ${collection}.${field}: unset on ${modified} document(s)`)
+        }
+      }
+    },
+  },
+  {
+    name: '0005-prune-attachment-permissions',
+    /**
+     * Remove the four `attachment.*` permissions from the database.
+     *
+     * `0004` dropped the attachment data but not the authorization vocabulary,
+     * which lives in two places `db push` does not touch:
+     *
+     *   • `permission_definitions` — rendered from the code catalog on boot, but
+     *     the seed upserts and never deletes, so removed keys linger as rows.
+     *   • `roles.permissions` — the seeded roles were granted these keys, and
+     *     `resolvePermissions()` now logs a "no longer in the catalog" warning on
+     *     every request made by anyone holding them (see src/server/context.ts).
+     *
+     * The admin UI cannot fix this: the role editor renders checkboxes from the
+     * code catalog, so a grant that is no longer in the catalog is invisible
+     * there and can never be unticked. It has to be pruned here.
+     *
+     * Forward-only, per the rules above: `0004` already ran, so this corrects it
+     * in a new migration rather than being folded back into it.
+     */
+    up: async (client) => {
+      const removed = [
+        'attachment.read',
+        'attachment.upload',
+        'attachment.delete_own',
+        'attachment.delete_any',
+      ]
+
+      const definitions = (await client.$runCommandRaw({
+        delete: 'permission_definitions',
+        deletes: [{ q: { key: { $in: removed } }, limit: 0 }],
+      })) as { n?: number }
+
+      const deleted = definitions.n ?? 0
+      if (deleted > 0) console.log(`      permission_definitions: deleted ${deleted} row(s)`)
+
+      // $pullAll rather than $pull so the grant list keeps its order, and because
+      // it is a no-op on roles that never held these keys.
+      const roles = (await client.$runCommandRaw({
+        update: 'roles',
+        updates: [
+          {
+            q: { permissions: { $in: removed } },
+            u: { $pullAll: { permissions: removed } },
+            multi: true,
+          },
+        ],
+      })) as { nModified?: number }
+
+      const pruned = roles.nModified ?? 0
+      if (pruned > 0) console.log(`      roles.permissions: pruned on ${pruned} role(s)`)
     },
   },
 ]

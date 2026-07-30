@@ -101,7 +101,7 @@ deployment-checklist/
     │   │   ├── roles/…                      # list, new, [id]  ← permission matrix
     │   │   ├── environments/page.tsx
     │   │   ├── audit/page.tsx
-    │   │   ├── settings/{general,email,storage,security,branding}/page.tsx
+    │   │   ├── settings/{general,email,security,branding}/page.tsx
     │   │   └── trash/page.tsx               # soft-delete restore across all entities
     │   │
     │   └── api/
@@ -117,9 +117,6 @@ deployment-checklist/
     │       │   ├── users/route.ts  ·  invitations/route.ts
     │       │   ├── audit-logs/route.ts
     │       │   └── search/route.ts
-    │       ├── files/
-    │       │   ├── presign/route.ts                     # direct-to-provider upload
-    │       │   └── [attachmentId]/route.ts              # authorized download proxy
     │       ├── cron/{outbox,rollup,sweep,reap}/route.ts # CRON_SECRET guarded
     │       └── health/route.ts  ·  ready/route.ts
     │
@@ -172,7 +169,6 @@ deployment-checklist/
     │   │       └── history-table.tsx
     │   │
     │   ├── comments/     {server,schemas,actions,components}/
-    │   ├── attachments/  {server,schemas,actions,components}/
     │   ├── users/        {server,schemas,actions,components}/
     │   ├── roles/        {server,schemas,actions,components}/   # permission matrix UI
     │   ├── environments/ {server,schemas,actions,components}/
@@ -201,11 +197,6 @@ deployment-checklist/
     │   │   ├── channels/{email-channel.ts,slack-channel.ts,webhook-channel.ts}
     │   │   ├── providers/{gmail.ts,smtp.ts,resend.ts,ses.ts,console.ts,noop.ts}
     │   │   └── renderer.ts                 # React Email → { html, text }
-    │   ├── storage/
-    │   │   ├── types.ts
-    │   │   ├── registry.ts
-    │   │   ├── providers/{local.ts,s3.ts,azure.ts,gcs.ts,memory.ts}
-    │   │   └── validate.ts                 # magic-byte sniffing, size, allowlist
     │   ├── events/{bus.ts,events.ts,handlers/*.ts}
     │   ├── http/{api-handler.ts,responses.ts,errors.ts,pagination.ts,query-parser.ts,rate-limit.ts}
     │   ├── crypto/{secret-box.ts,hash.ts,random.ts}
@@ -252,7 +243,7 @@ The table people actually need on day three.
 | A component used by 3+ features | `src/components/{data,forms,primitives}/` | duplicated |
 | A shadcn primitive | `src/components/ui/` (generated) | hand-written |
 | Anything importing `@prisma/client` | `src/lib/db/`, `src/infrastructure/`, `*-repository.ts` | anywhere else |
-| A provider adapter (S3, Resend) | `src/lib/<port>/providers/` | a service |
+| A provider adapter (Resend, SES) | `src/lib/<port>/providers/` | a service |
 | An index change | `prisma/schema.prisma` **and** `prisma/indexes.md` | schema only |
 | A data backfill | `prisma/migrations-data/NNNN-*.ts` | a one-off script you run by hand |
 
@@ -277,7 +268,6 @@ import 'server-only'
 
 export const container = {
   db: prisma,
-  storage: createStorageProvider(env.STORAGE_PROVIDER),      // local | s3 | azure | gcs
   email: createEmailProvider(env.EMAIL_PROVIDER),            // gmail | smtp | resend | ses | console
   notifications: createDispatcher([emailChannel /*, slackChannel */]),
   rateLimiter: env.REDIS_URL ? new RedisRateLimiter() : new MongoRateLimiter(prisma),

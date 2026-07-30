@@ -22,7 +22,6 @@ The attached `Pre Deployment checklist.html` is the **visual and behavioural ref
 | 9 | UI component hierarchy | [docs/07-ui-architecture.md](docs/07-ui-architecture.md) |
 | 10 | State management strategy | [docs/07-ui-architecture.md#state-management](docs/07-ui-architecture.md#state-management) |
 | 11 | Email abstraction | [docs/08-abstractions.md#1-notifications](docs/08-abstractions.md#1-notifications) · [src/lib/notifications/](src/lib/notifications/) |
-| 12 | File storage abstraction | [docs/08-abstractions.md#2-file-storage](docs/08-abstractions.md#2-file-storage) · [src/lib/storage/](src/lib/storage/) |
 | 13 | Audit logging strategy | [docs/09-audit-logging.md](docs/09-audit-logging.md) · [src/lib/audit/](src/lib/audit/) |
 | 14 | Deployment lifecycle | [docs/10-deployment-lifecycle.md](docs/10-deployment-lifecycle.md) |
 | 15 | MongoDB collection design | [docs/03-data-model.md#collection-design](docs/03-data-model.md#collection-design) |
@@ -116,14 +115,13 @@ Adding Slack becomes one new `NotificationChannel` implementation and zero chang
                     ┌──────────────▼──┐   ┌───────▼──────────────┐
                     │ Prisma / Mongo  │   │ Ports (interfaces)   │
                     │  replica set    │   │  EmailProvider       │
-                    │  Atlas + PITR   │   │  StorageProvider     │
-                    └─────────────────┘   │  NotificationChannel │
-                                          │  Clock / IdGen       │
+                    │  Atlas + PITR   │   │  NotificationChannel │
+                    └─────────────────┘   │  Clock / IdGen       │
                                           │  RateLimiter         │
                                           └───────┬──────────────┘
                                                   │
                               ┌───────────────────┴─────────────────┐
-                              │ Gmail SMTP · Local disk / S3 · …    │
+                              │ Gmail SMTP · …                      │
                               └─────────────────────────────────────┘
 
    Background (Vercel Cron or a worker): outbox drain · daily rollups
@@ -136,7 +134,7 @@ Four layers, dependencies pointing one way only:
 |---|---|---|
 | **Domain** — entities, state machine, policies, pure functions | nothing external | Prisma, React, Next |
 | **Application** — services, use cases, ports | domain + port interfaces | concrete providers, React |
-| **Infrastructure** — Prisma repos, Gmail, S3, Redis | application ports | UI |
+| **Infrastructure** — Prisma repos, Gmail, Redis | application ports | UI |
 | **Presentation** — RSC pages, actions, route handlers, components | application services | Prisma directly |
 
 The rule that keeps this honest: **only `src/infrastructure/**` and `src/lib/db/**` may import `@prisma/client`.** Enforced by `eslint-plugin-boundaries` in CI, not by convention.
@@ -155,7 +153,7 @@ deployment-checklist/
 │   ├── app/                      ← routes only; no business logic
 │   ├── features/                 ← vertical slices: deployments, templates, projects, …
 │   ├── domain/                   ← pure business rules
-│   ├── lib/                      ← authz, audit, notifications, storage, db, http, crypto
+│   ├── lib/                      ← authz, audit, notifications, db, http, crypto
 │   ├── components/               ← ui/ (shadcn) + shared composites
 │   └── server/                   ← container, context, ALS, cron entrypoints
 └── tests/                        ← unit · integration (mongodb-memory-server RS) · e2e
@@ -241,7 +239,7 @@ build. See [README](README.md) to run it.
 | **2. Projects & environments** | CRUD, soft delete + restore, memberships | deployments need a project |
 | **3. Templates** | template + versions, embedded section/item editor, reorder, duplicate, publish, version diff | deployments need a template to snapshot |
 | **4. The console** | run creation with snapshot, `ChecklistItemState`, optimistic toggles, gauge, readiness gate, state machine | the actual product; the HTML made real |
-| **5. Collaboration** | comments (markdown), attachments via `StorageProvider`, deployment timeline from audit | fits the run detail page already built |
+| **5. Collaboration** | comments (markdown), deployment timeline from audit | fits the run detail page already built |
 | **6. Visibility** | history grid (search/filter/sort/paginate/export), dashboard, global search | needs data from phase 4 to be meaningful |
 | **7. Admin & settings** | users, roles, environments, settings, audit viewer, restore bin | admin surface over everything above |
 | **8. Hardening** | rate limits, CSP + headers, a11y audit, load test, rollups, runbook, restore drill | last, but before go-live |

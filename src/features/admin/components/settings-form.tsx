@@ -218,24 +218,6 @@ export function SettingsForm({ settings }: SettingsFormProps) {
         </div>
       </fieldset>
 
-      {/* Storage Section */}
-      <fieldset className="space-y-4 rounded-lg border p-4">
-        <legend className="text-sm font-semibold">Storage</legend>
-
-        <div>
-          <Label htmlFor="maxUploadMb">Max Upload Size (MB)</Label>
-          <Input
-            id="maxUploadMb"
-            name="maxUploadMb"
-            type="number"
-            defaultValue={settings.maxUploadMb}
-            min={1}
-            max={500}
-            disabled={pending}
-          />
-        </div>
-      </fieldset>
-
       <Button type="submit" disabled={pending}>
         {pending ? 'Saving...' : 'Save Settings'}
       </Button>

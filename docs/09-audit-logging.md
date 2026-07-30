@@ -52,10 +52,9 @@ deployment.  created · updated · started · completed · failed
              item.checked · item.unchecked · item.skipped · item.unskipped
              item.note_added · item.evidence_overridden
              comment_added · comment_edited · comment_deleted
-             attachment_added · attachment_deleted
 
 environment. created · updated · deleted · restored
-settings.    updated · email_provider_changed · storage_provider_changed
+settings.    updated · email_provider_changed
              smtp_credentials_changed · email_test_sent
 notification.dead_lettered · retried
 system.      migration_applied · seed_run · job_failed

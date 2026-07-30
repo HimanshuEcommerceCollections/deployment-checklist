@@ -41,7 +41,6 @@ export class SettingsService {
         lockoutMinutes: input.lockoutMinutes,
         emailDailyCap: input.emailDailyCap,
         emailRetryLimit: input.emailRetryLimit,
-        maxUploadMb: input.maxUploadMb,
       },
     })
 

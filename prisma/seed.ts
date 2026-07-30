@@ -78,10 +78,9 @@ async function main() {
     create: {
       organizationId: organization.id,
       companyName: organization.name,
-      // console + local so a fresh clone works with no external accounts, and
-      // nobody accidentally emails a real person from seeded data.
+      // console so a fresh clone works with no external accounts, and nobody
+      // accidentally emails a real person from seeded data.
       emailProvider: 'console',
-      storageProvider: 'local',
       timezone: 'UTC',
     },
     // Deliberately narrow: re-seeding must not stomp an admin's configuration.

@@ -93,13 +93,6 @@ enum DeploymentStatus {
   ROLLED_BACK
 }
 
-enum AttachmentScope {
-  DEPLOYMENT
-  COMMENT
-  PROJECT
-  CHECKLIST_ITEM
-}
-
 enum OutboxStatus {
   PENDING
   SENDING
@@ -195,14 +188,6 @@ model Setting {
   emailDailyCap   Int     @default(400) // Gmail SMTP practical ceiling
   emailRetryLimit Int     @default(5)
 
-  // Storage
-  storageProvider  String   @default("local") // local | s3 | azure | gcs | vercel-blob
-  storageBucket    String?
-  storageRegion    String?
-  storagePrefix    String   @default("uploads")
-  maxUploadMb      Int      @default(25)
-  allowedMimeTypes String[] @default(["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/plain", "text/csv", "application/zip", "application/json"])
-
   // Retention & compliance
   auditRetentionDays  Int     @default(0) // 0 = keep forever
   auditImmutable      Boolean @default(true)
@@ -290,7 +275,6 @@ model User {
 
   memberships        Membership[]
   comments           DeploymentComment[]
-  uploadedAttachments Attachment[]
   sentInvitations    Invitation[]        @relation("InvitedBy")
   authTokens         AuthToken[]
 
@@ -491,7 +475,6 @@ model Project {
   memberships Membership[]
   templates   ProjectTemplate[]
   deployments DeploymentRun[]
-  attachments Attachment[]
 
   @@unique([organizationId, key])
   @@unique([organizationId, slug])
@@ -524,7 +507,7 @@ type TemplateItem {
   order    Int
 
   isRequired       Boolean @default(true)
-  /// Item cannot be checked without a note or attachment.
+  /// Item cannot be checked without a note recorded as evidence.
   evidenceRequired Boolean @default(false)
   /// Display-only hint: which role usually owns this item.
   ownerRoleKey     String?
@@ -727,7 +710,6 @@ model DeploymentRun {
   completedItems    Int @default(0)
   completedRequired Int @default(0)
   commentCount      Int @default(0)
-  attachmentCount   Int @default(0)
 
   startedAt   DateTime?
   startedById String?   @db.ObjectId
@@ -765,7 +747,6 @@ model DeploymentRun {
 
   itemStates  ChecklistItemState[]
   comments    DeploymentComment[]
-  attachments Attachment[]
 
   @@unique([projectId, sequence])
   @@index([organizationId, status, createdAt(sort: Desc)])
@@ -804,7 +785,6 @@ model ChecklistItemState {
 
   /// Evidence
   note          String?
-  attachmentIds String[] @db.ObjectId
 
   /// Not applicable for this run (e.g. no schema change) — excluded from gates.
   skipped       Boolean @default(false)
@@ -850,60 +830,11 @@ model DeploymentComment {
   deletedAt DateTime?
   deletedById String? @db.ObjectId
 
-  attachments Attachment[]
-
   @@index([deploymentId, deletedAt, createdAt])
   @@index([authorId, createdAt(sort: Desc)])
   @@map("deployment_comments")
 }
 
-/// Provider-agnostic file metadata. We store `provider` + `key`, never a URL,
-/// so the storage backend can be swapped without touching a single row.
-model Attachment {
-  id             String @id @default(auto()) @map("_id") @db.ObjectId
-  organizationId String @db.ObjectId
-
-  scope AttachmentScope
-
-  deploymentId String?        @db.ObjectId
-  deployment   DeploymentRun? @relation(fields: [deploymentId], references: [id])
-  commentId    String?        @db.ObjectId
-  comment      DeploymentComment? @relation(fields: [commentId], references: [id])
-  projectId    String?        @db.ObjectId
-  project      Project?       @relation(fields: [projectId], references: [id])
-  itemId       String? // snapshot item id when scope = CHECKLIST_ITEM
-
-  provider    String // local | s3 | azure | gcs | vercel-blob
-  storageKey  String
-  fileName    String
-  contentType String
-  /// Sniffed from magic bytes server-side, not taken from the client.
-  detectedType String?
-  sizeBytes   Int
-  checksum    String? // sha256, for dedupe and integrity
-
-  width  Int?
-  height Int?
-  /// null = unscanned, "clean" | "infected" | "error"
-  scanStatus String?
-  scanAt     DateTime?
-
-  uploadedById String @db.ObjectId
-  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  /// Set when the object has actually been removed from the provider.
-  purgedAt  DateTime?
-
-  @@index([deploymentId, deletedAt])
-  @@index([commentId, deletedAt])
-  @@index([organizationId, createdAt(sort: Desc)])
-  @@index([provider, purgedAt]) // orphan reaper
-  @@index([checksum])
-  @@map("attachments")
-}
 
 // ===========================================================================
 //  AUDIT

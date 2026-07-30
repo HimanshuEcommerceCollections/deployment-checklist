@@ -126,8 +126,6 @@ export const AUDIT_ACTIONS = {
     commentAdded: 'deployment.comment_added',
     commentEdited: 'deployment.comment_edited',
     commentDeleted: 'deployment.comment_deleted',
-    attachmentAdded: 'deployment.attachment_added',
-    attachmentDeleted: 'deployment.attachment_deleted',
   },
 
   // ── Configuration ─────────────────────────────────────────────────────────
@@ -141,7 +139,6 @@ export const AUDIT_ACTIONS = {
   settings: {
     updated: 'settings.updated',
     emailProviderChanged: 'settings.email_provider_changed',
-    storageProviderChanged: 'settings.storage_provider_changed',
     smtpCredentialsChanged: 'settings.smtp_credentials_changed',
     emailTestSent: 'settings.email_test_sent',
   },
@@ -257,7 +254,6 @@ export const TIMELINE_ACTIONS: ReadonlySet<string> = new Set<AuditAction>([
   AUDIT_ACTIONS.deployment.itemsBulkChecked,
   AUDIT_ACTIONS.deployment.itemSkipped,
   AUDIT_ACTIONS.deployment.commentAdded,
-  AUDIT_ACTIONS.deployment.attachmentAdded,
 ])
 
 /**

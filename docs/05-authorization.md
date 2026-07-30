@@ -207,7 +207,7 @@ Currently implemented policies:
 | `canUncheckItem` | run must be `IN_PROGRESS`; only the ticker may untick unless `deployment.item.uncheck_other` |
 | `canEditRun` | only in `DRAFT` or `IN_PROGRESS`; terminal runs are read-only for everyone |
 | `canCompleteRun` | readiness gate must be `GO` under the snapshot's `completionPolicy` |
-| `canCheckItem` | `evidenceRequired` items need a note or attachment unless `deployment.item.override` |
+| `canCheckItem` | `evidenceRequired` items need a note unless `deployment.item.override` |
 | `canEditTemplateVersion` | a `PUBLISHED` version is frozen; editing clones it to a `DRAFT` |
 | `canDeleteRole` | `isSystem` roles are undeletable; a role with grants must be reassigned first |
 | `canSuspendUser` | nobody may suspend themselves; the last super-admin cannot be suspended |

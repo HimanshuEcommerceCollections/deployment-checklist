@@ -174,28 +174,12 @@ headers: [{
 }]
 ```
 
-`frame-ancestors 'none'` plus `X-Frame-Options: DENY` is intentional belt-and-braces — the latter for older browsers. `nosniff` matters specifically for the attachment download route: without it a browser may sniff a mis-typed file as HTML and execute it in our origin.
+`frame-ancestors 'none'` plus `X-Frame-Options: DENY` is intentional belt-and-braces — the latter for older browsers. `nosniff` stops a browser sniffing a response as HTML and executing it in our origin regardless of the declared content type.
 
 ---
 
-## 12.6 File uploads
 
-Detailed in [docs/08](08-abstractions.md#2-file-storage). The security-relevant chain:
-
-1. **Extension blocklist** — `.exe`, `.js`, `.sh`, `.html`, `.svg`, `.xml`, and the rest, refused regardless of configuration. HTML served from our origin is stored XSS with the victim's session attached; SVG is scriptable and is the classic bypass of an "images only" allowlist.
-2. **MIME allowlist** from settings.
-3. **Size limit** enforced server-side — a client-side check is a hint.
-4. **Magic-byte sniffing** with `file-type`. This is the authority; `Content-Type` is a value the uploader chose.
-5. **Mismatch rejection** — declared ≠ detected means the object is deleted and the row refused.
-6. **Path traversal** structurally impossible: `buildStorageKey` places the only user-influenced segment last, sanitised to `[A-Za-z0-9._-]`.
-7. **Private by default** — no public object URLs for attachments. Every download is permission-checked and issued a short-lived signed URL (300 s) or proxied.
-8. **`Content-Disposition: attachment`** plus `nosniff` on proxied streams, so even a mis-typed file cannot execute.
-9. **Presign confirmation** — `head()` verifies real size and type after a direct upload. Without it, `/api/files/presign` is an open, validation-free upload endpoint.
-10. **Virus scan hook** — `scanStatus` gates download; `infected` is refused.
-
----
-
-## 12.7 Rate limiting and abuse
+## 12.6 Rate limiting and abuse
 
 Fixed-window counters in Redis or the `RateLimit` collection. **In-process counters are not an option** — every serverless instance would enforce the limit independently, so the effective limit is N× what you configured.
 
@@ -213,7 +197,7 @@ Auth buckets are keyed by **both** email and IP. Email-only allows a distributed
 
 ---
 
-## 12.8 Audit integrity
+## 12.7 Audit integrity
 
 The audit trail is a security control, so it is protected as one:
 
@@ -226,7 +210,7 @@ The audit trail is a security control, so it is protected as one:
 
 ---
 
-## 12.9 Dependencies and supply chain
+## 12.8 Dependencies and supply chain
 
 | Control | Implementation |
 |---|---|
@@ -242,7 +226,7 @@ The audit trail is a security control, so it is protected as one:
 
 ---
 
-## 12.10 Logging and privacy
+## 12.9 Logging and privacy
 
 **Never logged:** passwords, password hashes, tokens (raw or hashed), session cookies, SMTP secrets, API keys, full request bodies on auth routes.
 
@@ -265,7 +249,7 @@ export const redactPaths = [
 
 ---
 
-## 12.11 Pre-launch checklist
+## 12.10 Pre-launch checklist
 
 Ordered by consequence.
 
@@ -301,7 +285,7 @@ Ordered by consequence.
 
 ---
 
-## 12.12 Accepted risks
+## 12.11 Accepted risks
 
 Stated explicitly, because an unstated accepted risk is indistinguishable from an oversight.
 

@@ -19,10 +19,6 @@ next-env.d.ts
 .mongo/
 .cache/
 
-# local file storage provider
-storage/
-uploads/
-
 # misc
 .DS_Store
 *.pem

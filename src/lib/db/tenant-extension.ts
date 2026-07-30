@@ -34,7 +34,6 @@ const TENANT_MODELS = new Set<string>([
   'DeploymentRun',
   'ChecklistItemState',
   'DeploymentComment',
-  'Attachment',
   'AuditLog',
   'NotificationOutbox',
   'DeploymentDailyStat',

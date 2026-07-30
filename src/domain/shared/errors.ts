@@ -163,7 +163,7 @@ function preconditionMessage(reason: string): string {
     case 'ILLEGAL_TRANSITION':
       return 'That is not a valid next step for this deployment.'
     case 'EVIDENCE_REQUIRED':
-      return 'This item needs a note or an attachment before it can be checked.'
+      return 'This item needs a note before it can be checked.'
     case 'NOT_ITEM_OWNER':
       return 'Only the person who checked this item can uncheck it.'
     case 'VERSION_PUBLISHED':

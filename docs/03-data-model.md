@@ -27,7 +27,6 @@ erDiagram
     User          ||--o{ Invitation             : "invitedBy"
     User          ||--o{ AuthToken              : "resets with"
     User          ||--o{ DeploymentComment      : "authors"
-    User          ||--o{ Attachment             : "uploads"
 
     Project       ||--o{ ProjectTemplate        : "enables"
     ChecklistTemplate ||--o{ ProjectTemplate    : "enabled on"
@@ -46,9 +45,7 @@ erDiagram
 
     DeploymentRun ||--o{ ChecklistItemState     : "mutable state, 1 per item"
     DeploymentRun ||--o{ DeploymentComment      : "discussed in"
-    DeploymentRun ||--o{ Attachment             : "evidenced by"
     DeploymentRun ||--o| DeploymentRun          : "rollbackOfId"
-    DeploymentComment ||--o{ Attachment         : "attaches"
     DeploymentComment ||--o| DeploymentComment  : "parentId (1 level)"
 
     PermissionDefinition }o--o{ Role            : "referenced by key"
@@ -80,8 +77,7 @@ Organization
        ├── {ChecklistSnapshot}            embedded, frozen at creation
        │     └── [SnapshotSection → SnapshotItem]
        ├── ChecklistItemState*            one small doc per item — mutable
-       ├── DeploymentComment*             markdown
-       └── Attachment*                    provider + key, never a URL
+       └── DeploymentComment*             markdown
 ```
 
 ---
@@ -120,7 +116,7 @@ DeploymentRun                          ChecklistItemState  (one doc per item)
 │ checklist: {                     │   │ deploymentId  ─┐ unique together  │
 │   templateVersionId, version: 2, │   │ itemId        ─┘                  │
 │   capturedAt,                    │   │ checked, checkedById, checkedAt   │
-│   sections: [                    │   │ note, attachmentIds[]             │
+│   sections: [                    │   │ note                              │
 │     { id, title, order,          │   │ skipped, skipReason               │
 │       items: [                   │   │ revision   ← optimistic guard     │
 │         { id, label, isRequired, │   └───────────────────────────────────┘
@@ -216,7 +212,6 @@ The rule used throughout: **embed when the child has no independent lifecycle, i
 | `ChecklistSnapshot` | **Embed** in `DeploymentRun` | The immutability requirement. One document read renders the whole console. |
 | `ChecklistItemState` | **Reference** | Concurrent per-item writes. Prisma cannot do positional composite updates. |
 | `DeploymentComment` | **Reference** | Unbounded growth, independent pagination, own soft delete, own audit. |
-| `Attachment` | **Reference** | Polymorphic (run / comment / project / item), needs a lifecycle of its own (scan → purge), reused by the orphan reaper. |
 | `AuditLog` | **Reference** | Highest-volume collection. Must never inflate a hot document. |
 | `Setting` | Separate 1:1 collection | Read on nearly every request and cached; keeping it out of `Organization` keeps that cache tight and secrets in one place. |
 | `Membership` | Join collection | Needs `(user, project, role)` uniqueness and its own audit. |
@@ -251,7 +246,6 @@ The rule used throughout: **embed when the child has no independent lifecycle, i
 | `deployment_runs` | ~20,000 | steady | **hot list + hot detail** | Embeds snapshot; heaviest read |
 | `checklist_item_states` | **~2,400,000** | steady | by deployment | ~120/run; small docs |
 | `deployment_comments` | ~60,000 | steady | by deployment | Markdown |
-| `attachments` | ~40,000 | steady | by deployment/comment | Metadata only |
 | `audit_logs` | **~8,000,000** | fastest | by entity, actor, project, time | Append-only; archive path |
 | `notification_outbox` | ~200,000 | churns | by status + nextAttemptAt | Prune SENT after 30 d |
 | `deployment_daily_stats` | ~55,000 | steady | dashboard reads | Pre-aggregated |
@@ -335,7 +329,7 @@ Every denormalised field is a deliberate trade, so each needs an owner that keep
 | `DeploymentRun.totalItems` / `totalRequired` | the snapshot | written once at creation | immutable, so it cannot drift |
 | `DeploymentRun.environmentKey` / `environmentName` | `Environment` | written once at creation | history stays readable after a rename or delete |
 | `DeploymentRun.startedByName` / `completedByName` | `User.name` | written at transition | history stays attributable after deactivation |
-| `DeploymentRun.commentCount` / `attachmentCount` | child collections | `$inc` on create/delete | list badges |
+| `DeploymentRun.commentCount` | `DeploymentComment` | `$inc` on create/delete | list badges |
 | `DeploymentRun.durationMs` | timestamps | written once on terminal transition | sortable, avoids per-row math |
 | `Project.deploymentCount` / `lastDeploymentAt` | `DeploymentRun` | `$inc` on create; nightly reconcile | project cards |
 | `TemplateVersion.itemCount` / `requiredCount` / `sectionCount` | embedded arrays | recomputed on every version write | template list without walking arrays |
@@ -489,4 +483,4 @@ The fallback is explicitly a fallback: it is fine at tens of thousands of docume
 - **Admin user** — from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`, `status: ACTIVE`. Refuses to run in production unless `SEED_ALLOW_PRODUCTION=true`.
 - **Projects** — Apex, Elevate, Internal Portal, Website.
 - **`Production Deployment` template v1 (PUBLISHED)** — the ten sections and forty-nine items from the attached HTML, verbatim, with `Final Go / No-Go` items marked `isRequired` and `Backup taken immediately before migration runs` marked `evidenceRequired`. The reference design becomes real seeded data on first boot.
-- **Settings** — `emailProvider: "console"`, `storageProvider: "local"` so a fresh clone works with no external accounts.
+- **Settings** — `emailProvider: "console"` so a fresh clone works with no external accounts.

@@ -240,8 +240,6 @@ Deployments
   POST   /api/v1/deployments/:id/comments
   PATCH  /api/v1/deployments/:id/comments/:cid
   DELETE /api/v1/deployments/:id/comments/:cid
-  GET    /api/v1/deployments/:id/attachments
-  DELETE /api/v1/deployments/:id/attachments/:aid
   GET    /api/v1/deployments/:id/timeline        audit-derived
   GET    /api/v1/deployments/export?format=csv|xlsx&…   streamed
 
@@ -263,11 +261,6 @@ Config & ops
   GET    /api/v1/notifications/outbox        POST …/:id/retry
   GET    /api/v1/dashboard/stats
   GET    /api/v1/search?q=&types=projects,deployments,templates,users
-
-Files
-  POST   /api/files/presign                  → { uploadUrl, fields, attachmentId }
-  POST   /api/files/:attachmentId/confirm     finalises after a direct upload
-  GET    /api/files/:attachmentId             authorized download (redirect or proxy)
 
 Ops
   GET    /api/health                          liveness — no DB

@@ -23,7 +23,7 @@ const run = await db.deploymentRun.findFirst({
     environmentKey: true, environmentName: true, isProduction: true,
     totalItems: true, totalRequired: true, completedItems: true, completedRequired: true,
     startedAt: true, startedByName: true, completedAt: true, completedByName: true,
-    durationMs: true, commentCount: true, attachmentCount: true,
+    durationMs: true, commentCount: true,
     checklist: true,                          // the embedded snapshot — free, same document
     project: { select: { id: true, name: true, slug: true, color: true } },
   },
@@ -35,7 +35,7 @@ const states = await db.checklistItemState.findMany({
 })
 ```
 
-The snapshot arrives free because it lives in the same document. The `checked` state is ~120 small documents from one index range scan. Comments, attachments, and the timeline stream separately behind `<Suspense>`, so the checklist never waits for them.
+The snapshot arrives free because it lives in the same document. The `checked` state is ~120 small documents from one index range scan. Comments and the timeline stream separately behind `<Suspense>`, so the checklist never waits for them.
 
 **History list** — the widest filter surface.
 
@@ -141,7 +141,7 @@ export const getSettingsCached = (orgId: string) =>
 
 **Server Components by default.** Roughly six of thirty components in the console tree are client components. Markdown rendering in particular stays server-side, keeping a parser and sanitiser (~40 KB gzipped) out of the browser entirely.
 
-**Streaming.** The checklist renders as soon as the run and item states load; comments, attachments, and timeline arrive behind `<Suspense>`. The page's reason for existing is never blocked by a comment query.
+**Streaming.** The checklist renders as soon as the run and item states load; comments and timeline arrive behind `<Suspense>`. The page's reason for existing is never blocked by a comment query.
 
 **Optimistic mutations.** `useOptimistic` makes a tick feel instant. The reference HTML was instant because it wrote to `localStorage`; a network round trip must not make the rebuild feel worse.
 
@@ -212,7 +212,6 @@ CSV injection is handled in `toCsvRows`: a cell beginning `=`, `+`, `-`, or `@` 
 | `stats:rollup` | hourly | small | maintain `DeploymentDailyStat` |
 | `stats:reconcile` | nightly | full scan | verify denormalised counters; log drift |
 | `tokens:sweep` | hourly | small | expire invitations, purge consumed tokens |
-| `files:reap` | nightly | provider calls | purge soft-deleted objects, orphaned uploads |
 | `locks:sweep` | 5 min | trivial | release expired job locks |
 | `audit:archive` | nightly, opt-in | large | cold-storage export before retention deletion |
 

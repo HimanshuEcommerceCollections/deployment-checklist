@@ -157,7 +157,7 @@ async toggleItem(ctx: RequestContext, input: ToggleItemInput) {
   }
 
   const item = findSnapshotItem(run.checklist, input.itemId)
-  if (input.checked && item.evidenceRequired && !state.note && state.attachmentIds.length === 0) {
+  if (input.checked && item.evidenceRequired && !state.note) {
     if (!can(ctx, PERMISSIONS.deployment.itemOverride, { projectId: run.projectId }))
       throw new PreconditionFailedError('EVIDENCE_REQUIRED', { itemLabel: item.label })
   }

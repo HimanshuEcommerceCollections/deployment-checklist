@@ -20,9 +20,6 @@ export const UpdateSettingsSchema = z
     // Email
     emailDailyCap: z.coerce.number().int().min(1).max(10000),
     emailRetryLimit: z.coerce.number().int().min(1).max(20),
-
-    // Storage
-    maxUploadMb: z.coerce.number().int().min(1).max(500),
   })
   .strict()
 

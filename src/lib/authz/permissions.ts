@@ -31,7 +31,7 @@ export const PERMISSION_GROUPS = {
   templates: 'Checklist Templates',
   deployments: 'Deployments',
   execution: 'Checklist Execution',
-  collaboration: 'Comments & Attachments',
+  collaboration: 'Comments',
   users: 'Users & Access',
   admin: 'Administration',
 } as const
@@ -106,10 +106,6 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
   { key: 'comment.edit_own',      group: 'collaboration', label: 'Edit own comments', description: 'Change your own comments.' },
   { key: 'comment.delete_own',    group: 'collaboration', label: 'Delete own comments', description: 'Remove your own comments.' },
   { key: 'comment.moderate',      group: 'collaboration', label: 'Moderate comments', description: "Edit or delete anyone's comments.", dangerous: true },
-  { key: 'attachment.read',       group: 'collaboration', label: 'View attachments', description: 'List and download attached files.' },
-  { key: 'attachment.upload',     group: 'collaboration', label: 'Upload attachments', description: 'Attach files to deployments, comments and checklist items.' },
-  { key: 'attachment.delete_own', group: 'collaboration', label: 'Delete own attachments', description: 'Remove files you uploaded.' },
-  { key: 'attachment.delete_any', group: 'collaboration', label: 'Delete any attachment', description: 'Remove files uploaded by anyone.', dangerous: true },
 
   // ── Users & access ────────────────────────────────────────────────────────
   { key: 'user.read',      group: 'users', label: 'View users',      description: 'See the user directory.', globalOnly: true },
@@ -127,7 +123,7 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
   { key: 'audit.export',        group: 'admin', label: 'Export audit log',  description: 'Download audit entries.', globalOnly: true },
   { key: 'environment.manage',  group: 'admin', label: 'Manage environments', description: 'Add and configure deployment environments.', globalOnly: true },
   { key: 'settings.read',       group: 'admin', label: 'View settings',     description: 'See organisation settings. Secrets are always masked.', globalOnly: true },
-  { key: 'settings.manage',     group: 'admin', label: 'Manage settings',   description: 'Change branding, email, storage, security and retention settings.', globalOnly: true, dangerous: true },
+  { key: 'settings.manage',     group: 'admin', label: 'Manage settings',   description: 'Change branding, email, security and retention settings.', globalOnly: true, dangerous: true },
   { key: 'notification.read',   group: 'admin', label: 'View outbox',       description: 'Inspect queued and failed notifications.', globalOnly: true },
   { key: 'notification.retry',  group: 'admin', label: 'Retry notifications', description: 'Requeue a failed notification.', globalOnly: true },
 ] as const
@@ -169,10 +165,6 @@ export const PERMISSIONS = {
   comment: {
     read: 'comment.read', create: 'comment.create', editOwn: 'comment.edit_own',
     deleteOwn: 'comment.delete_own', moderate: 'comment.moderate',
-  },
-  attachment: {
-    read: 'attachment.read', upload: 'attachment.upload',
-    deleteOwn: 'attachment.delete_own', deleteAny: 'attachment.delete_any',
   },
   user: {
     read: 'user.read', invite: 'user.invite', edit: 'user.edit',
@@ -303,8 +295,6 @@ export const SEED_ROLES = [
       PERMISSIONS.deployment.cancel, PERMISSIONS.deployment.export,
       PERMISSIONS.comment.read, PERMISSIONS.comment.create,
       PERMISSIONS.comment.editOwn, PERMISSIONS.comment.deleteOwn,
-      PERMISSIONS.attachment.read, PERMISSIONS.attachment.upload,
-      PERMISSIONS.attachment.deleteOwn,
       // Deliberately absent: deployment.complete and deployment.production.
       // Closing a release and shipping to production are separable decisions —
       // the four-eyes default. Grant them if that is not your model.
@@ -319,7 +309,6 @@ export const SEED_ROLES = [
       PERMISSIONS.project.read, PERMISSIONS.template.read,
       PERMISSIONS.deployment.read, PERMISSIONS.deployment.execute,
       PERMISSIONS.comment.read, PERMISSIONS.comment.create, PERMISSIONS.comment.editOwn,
-      PERMISSIONS.attachment.read, PERMISSIONS.attachment.upload,
     ],
   },
   {
@@ -335,7 +324,6 @@ export const SEED_ROLES = [
       PERMISSIONS.deployment.rollback, PERMISSIONS.deployment.production,
       PERMISSIONS.deployment.itemSkip, PERMISSIONS.deployment.export,
       PERMISSIONS.comment.read, PERMISSIONS.comment.create, PERMISSIONS.comment.editOwn,
-      PERMISSIONS.attachment.read, PERMISSIONS.attachment.upload,
       PERMISSIONS.environment.manage,
     ],
   },
@@ -356,7 +344,6 @@ export const SEED_ROLES = [
       PERMISSIONS.deployment.itemSkip, PERMISSIONS.deployment.itemUncheckOther,
       PERMISSIONS.comment.read, PERMISSIONS.comment.create,
       PERMISSIONS.comment.editOwn, PERMISSIONS.comment.moderate,
-      PERMISSIONS.attachment.read, PERMISSIONS.attachment.upload,
       PERMISSIONS.audit.read,
     ],
   },

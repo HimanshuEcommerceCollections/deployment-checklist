@@ -112,7 +112,7 @@ async function main() {
     const collections = [
       'organizations', 'environments', 'users', 'roles', 'memberships',
       'projects', 'checklist_templates', 'template_versions',
-      'project_templates', 'deployment_runs', 'deployment_comments', 'attachments',
+      'project_templates', 'deployment_runs', 'deployment_comments',
     ]
     const broken: string[] = []
 
