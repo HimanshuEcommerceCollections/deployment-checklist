@@ -144,7 +144,7 @@ const serverSchema = z
     SEARCH_BACKEND: z.enum(['atlas', 'regex']).default('regex'),
 
     // ── Seed ─────────────────────────────────────────────────────────────
-    SEED_ORG_NAME: z.string().default('Acme Engineering'),
+    SEED_ORG_NAME: z.string().default('EcommerceCollections.com'),
     SEED_ADMIN_EMAIL: z.string().email().default('admin@example.com'),
     SEED_ADMIN_NAME: z.string().default('Platform Admin'),
     SEED_ADMIN_PASSWORD: z.string().min(12).default('ChangeMeImmediately!2026'),

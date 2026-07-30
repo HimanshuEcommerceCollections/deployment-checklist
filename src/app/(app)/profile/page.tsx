@@ -1,8 +1,7 @@
-import { getProfile } from '@/features/profile/actions/profile.actions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { getProfile } from '@/features/profile/actions/profile.actions'
+import { PasswordForm } from '@/features/profile/components/password-form'
+import { ProfileForm } from '@/features/profile/components/profile-form'
 
 export const metadata = { title: 'Profile' }
 
@@ -10,10 +9,12 @@ export default async function ProfilePage() {
   const user = await getProfile()
 
   return (
-    <div className="space-y-8 max-w-2xl">
+    <div className="max-w-2xl space-y-8">
       <div>
         <h1 className="text-3xl font-bold">Account Settings</h1>
-        <p className="text-gray-600 mt-2">Manage your account information and security settings</p>
+        <p className="mt-2 text-gray-600">
+          Manage your account information and security settings
+        </p>
       </div>
 
       <Card>
@@ -22,43 +23,7 @@ export default async function ProfilePage() {
           <CardDescription>Update your name, email, and job title</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action="/api/profile/update" method="POST" className="space-y-4">
-            <div>
-              <Label htmlFor="name">Full Name</Label>
-              <Input
-                id="name"
-                name="name"
-                defaultValue={user.name}
-                required
-                maxLength={100}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                defaultValue={user.email}
-                required
-                maxLength={255}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="jobTitle">Job Title</Label>
-              <Input
-                id="jobTitle"
-                name="jobTitle"
-                defaultValue={user.jobTitle || ''}
-                maxLength={100}
-                placeholder="Optional"
-              />
-            </div>
-
-            <Button type="submit">Save Changes</Button>
-          </form>
+          <ProfileForm name={user.name} email={user.email} jobTitle={user.jobTitle} />
         </CardContent>
       </Card>
 
@@ -68,41 +33,7 @@ export default async function ProfilePage() {
           <CardDescription>Update your password to keep your account secure</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action="/api/profile/password" method="POST" className="space-y-4">
-            <div>
-              <Label htmlFor="currentPassword">Current Password</Label>
-              <Input
-                id="currentPassword"
-                name="currentPassword"
-                type="password"
-                required
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="newPassword">New Password</Label>
-              <Input
-                id="newPassword"
-                name="newPassword"
-                type="password"
-                required
-                minLength={8}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                required
-                minLength={8}
-              />
-            </div>
-
-            <Button type="submit">Change Password</Button>
-          </form>
+          <PasswordForm />
         </CardContent>
       </Card>
 

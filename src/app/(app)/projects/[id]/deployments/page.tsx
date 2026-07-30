@@ -51,20 +51,30 @@ export default async function DeploymentsPage(props: { params: Promise<{ id: str
                 <TableHead>Title</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Environment</TableHead>
-                <TableHead>Items</TableHead>
+                <TableHead>Checked</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {deployments.map((dep: any) => (
+              {deployments.map((dep) => (
                 <TableRow key={dep.id}>
-                  <TableCell className="font-medium">{dep.title}</TableCell>
+                  <TableCell className="font-medium">
+                    {/* `title` is optional — a run created without one showed a
+                        blank name. The reference is always present. */}
+                    {dep.title || `${dep.reference} · ${dep.version}`}
+                    <span className="block font-mono text-xs text-gray-500">{dep.reference}</span>
+                  </TableCell>
                   <TableCell>
                     <Badge className={statusColor(dep.status)}>{dep.status}</Badge>
                   </TableCell>
                   <TableCell>{dep.environment?.name}</TableCell>
-                  <TableCell>{dep._count.items}</TableCell>
+                  {/* Was `_count.items`, which the query never selects — the
+                      column rendered blank on every row. The run maintains these
+                      two counters atomically, so no include is needed. */}
+                  <TableCell className="text-sm">
+                    {dep.completedItems}/{dep.totalItems}
+                  </TableCell>
                   <TableCell className="text-sm text-gray-600">
                     {new Date(dep.createdAt).toLocaleDateString()}
                   </TableCell>

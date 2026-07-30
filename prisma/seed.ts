@@ -61,14 +61,14 @@ async function main() {
     where: { slug: 'default' },
     create: {
       slug: 'default',
-      name: process.env.SEED_ORG_NAME ?? 'Acme Engineering',
+      name: process.env.SEED_ORG_NAME ?? 'EcommerceCollections.com',
       // Explicit because the seed uses a raw client: Prisma reads
       // `deletedAt: null` on MongoDB as "present and null", so an absent field
       // makes the row invisible to every filtered read. See
       // src/lib/db/soft-delete-extension.ts.
       deletedAt: null,
     },
-    update: { name: process.env.SEED_ORG_NAME ?? 'Acme Engineering' },
+    update: { name: process.env.SEED_ORG_NAME ?? 'EcommerceCollections.com' },
   })
   console.log(`  organization      ${organization.name}`)
 

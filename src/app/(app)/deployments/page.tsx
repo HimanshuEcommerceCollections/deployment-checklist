@@ -59,15 +59,27 @@ export default async function DeploymentsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {deployments.map((dep: any) => {
-                const checkedCount = 0 // Would need itemStates included to calculate
-                const totalCount = dep._count.itemStates
+              {deployments.map((dep) => {
+                /**
+                 * Progress used to be hardcoded to 0 with a note saying it "would
+                 * need itemStates included to calculate" — so every row showed an
+                 * empty bar at 0%. It does not: DeploymentRun maintains
+                 * completedItems and totalItems atomically alongside every item
+                 * write, which is exactly why those counters exist.
+                 */
+                const checkedCount = dep.completedItems
+                const totalCount = dep.totalItems
                 const progress = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 0
 
                 return (
                   <TableRow key={dep.id}>
                     <TableCell className="font-medium">{dep.project?.name}</TableCell>
-                    <TableCell>{dep.title}</TableCell>
+                    <TableCell>
+                      {dep.title || `${dep.reference} · ${dep.version}`}
+                      <span className="block font-mono text-xs text-gray-500">
+                        {dep.reference}
+                      </span>
+                    </TableCell>
                     <TableCell>
                       <Badge className={statusColor(dep.status)}>{dep.status}</Badge>
                     </TableCell>
@@ -80,7 +92,9 @@ export default async function DeploymentsPage() {
                             style={{ width: `${progress}%` }}
                           />
                         </div>
-                        <span className="text-xs text-gray-600">{progress}%</span>
+                        <span className="text-xs text-gray-600">
+                          {progress}% ({checkedCount}/{totalCount})
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-gray-600">

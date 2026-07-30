@@ -38,7 +38,8 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
         <DropdownMenuSeparator />
 
         <DropdownMenuItem asChild>
-          <Link href="/account/profile">
+          {/* /account/profile has never existed — this 404'd. */}
+          <Link href="/profile">
             <UserIcon className="size-4" /> Account
           </Link>
         </DropdownMenuItem>
