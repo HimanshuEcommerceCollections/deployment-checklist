@@ -327,6 +327,53 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    name: '0007-retire-superseded-roles',
+    alwaysRun: true,
+    /**
+     * Finish what `0006` could not.
+     *
+     * `0006` leaves a retired role alive when somebody still holds it, because no
+     * automatic remap is safe. That leaves a manual step — reassign the holder —
+     * and once it is done, something has to come back and retire the role.
+     *
+     * A once-only migration cannot: the runner skips anything already recorded,
+     * so `0006` never runs again and the leftover role would linger until someone
+     * wrote `0008`. Hence `alwaysRun`: the sweep is idempotent (it only ever
+     * soft-deletes an unheld, not-yet-deleted role) and cheap, so it can simply
+     * re-check on every deploy and complete itself whenever the holders are gone.
+     *
+     * Deliberately narrower than `0006`: retirement only. It never touches
+     * permissions, so a repeatable migration can never overwrite an admin's edits.
+     */
+    up: async (client) => {
+      const SUPERSEDED: Record<string, string> = {
+        developer: 'engineer',
+        devops: 'release-manager',
+      }
+
+      for (const [retiredKey, successorKey] of Object.entries(SUPERSEDED)) {
+        const roles = await client.role.findMany({
+          where: { key: retiredKey, deletedAt: null },
+          select: { id: true, key: true, organizationId: true },
+        })
+
+        for (const role of roles) {
+          const holders = await client.user.count({
+            where: { roleIds: { has: role.id }, deletedAt: null },
+          })
+          const memberships = await client.membership.count({
+            where: { roleId: role.id, deletedAt: null },
+          })
+
+          if (holders > 0 || memberships > 0) continue
+
+          await client.role.update({ where: { id: role.id }, data: { deletedAt: new Date() } })
+          console.log(`      retired "${role.key}" → superseded by "${successorKey}"`)
+        }
+      }
+    },
+  },
 ]
 
 /**

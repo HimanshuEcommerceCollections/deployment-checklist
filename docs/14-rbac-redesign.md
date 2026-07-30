@@ -366,11 +366,21 @@ administrator, where the same request previously returned none. 61 unit tests pa
 12 of them new in `tests/unit/seed-roles.test.ts` pinning the role design and the
 org-wide visibility contract.
 
-One manual step remains per organization: `0006` deliberately **keeps** a retired
-role that is still assigned to somebody, because every candidate successor grants
-strictly more or strictly less than what the holder had, and no automatic remap is
-safe. On this database `developer` survived for that reason. Reassign the holder to
-`engineer` and re-run `npm run db:migrate-data` to finish retiring it.
+`0006` deliberately **keeps** a retired role that is still assigned to somebody,
+because every candidate successor grants strictly more or strictly less than what
+the holder had, and no automatic remap is safe. That leaves a manual step —
+reassign the holder — and `0007-retire-superseded-roles` then completes the
+retirement. It is `alwaysRun`, because the runner skips anything already recorded,
+so a once-only `0006` could never come back and finish the job. `0007` only ever
+soft-deletes an unheld role and never touches permissions, which is what makes it
+safe to repeat.
+
+Until §14.5A ships, `npm run set:role -- <email> <role-key>` is the supported way
+to change someone's role. It replaces rather than unions, so a reassignment does
+not leave the superseded role attached and still granting.
+
+Final state on this database: **admin, release-manager, engineer, qa, viewer**
+active; `developer` and `devops` retired; every user on a current role.
 
 **Phase 2 — user management.** Actions column on `admin/users`: change role, resend,
 revoke, suspend/restore. Server actions over the existing service methods.

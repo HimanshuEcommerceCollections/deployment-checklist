@@ -26,6 +26,7 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "grant:admin": "tsx scripts/grant-super-admin.ts",
+    "set:role": "tsx scripts/set-user-role.ts",
     "doctor": "tsx scripts/doctor.ts",
     "smoke": "tsx scripts/smoke.ts"
   },
