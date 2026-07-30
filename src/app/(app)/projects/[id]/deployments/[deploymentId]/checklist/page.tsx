@@ -3,11 +3,13 @@ import { notFound } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
 import { getDeployment } from '@/features/deployments/actions/deployments.actions'
-import { DeploymentGauge } from '@/features/deployments/components/deployment-gauge'
 import {
-  type ChecklistItem,
-  DeploymentSectionPanel,
-} from '@/features/deployments/components/deployment-section-panel'
+  type ChecklistSnapshot,
+  joinSnapshot,
+  summarise,
+} from '@/features/deployments/checklist-snapshot'
+import { DeploymentGauge } from '@/features/deployments/components/deployment-gauge'
+import { DeploymentSectionPanel } from '@/features/deployments/components/deployment-section-panel'
 import { PrintChecklistButton } from '@/features/deployments/components/print-checklist-button'
 
 export const metadata = { title: 'Deployment Checklist' }
@@ -26,23 +28,6 @@ export const metadata = { title: 'Deployment Checklist' }
  * 0/0. The data had been correct the whole time.
  */
 
-/** Shape of the frozen template content. Mirrors the ChecklistSnapshot type. */
-interface SnapshotItem {
-  id: string
-  label: string
-  helpText?: string | null
-  order: number
-  isRequired: boolean
-}
-
-interface SnapshotSection {
-  id: string
-  title: string
-  description?: string | null
-  order: number
-  items: SnapshotItem[]
-}
-
 export default async function DeploymentChecklistPage(props: {
   params: Promise<{ id: string; deploymentId: string }>
 }) {
@@ -57,46 +42,13 @@ export default async function DeploymentChecklistPage(props: {
 
   if (!deployment) notFound()
 
-  const snapshot = deployment.checklist as unknown as {
-    templateName?: string
-    version?: number
-    sections?: SnapshotSection[]
-  }
-
-  // Join tick state onto the snapshot by item id.
-  const stateByItemId = new Map(deployment.itemStates.map((state) => [state.itemId, state]))
-
-  const sections = [...(snapshot.sections ?? [])]
-    .sort((a, b) => a.order - b.order)
-    .map((section) => ({
-      id: section.id,
-      title: section.title,
-      description: section.description,
-      items: [...(section.items ?? [])]
-        .sort((a, b) => a.order - b.order)
-        .map((item): ChecklistItem => {
-          const state = stateByItemId.get(item.id)
-          return {
-            id: item.id,
-            label: item.label,
-            helpText: item.helpText,
-            isRequired: item.isRequired,
-            checked: state?.checked ?? false,
-            skipped: state?.skipped ?? false,
-            note: state?.note ?? null,
-            checkedByName: state?.checkedByName ?? null,
-            checkedAt: state?.checkedAt ?? null,
-          }
-        }),
-    }))
-
-  // Counted from item states rather than the snapshot: the states are what
-  // people actually wrote, and a skipped item is deliberately out of the gate.
-  const totalItems = deployment.itemStates.length
-  const checkedItems = deployment.itemStates.filter((s) => s.checked || s.skipped).length
-  const requiredOutstanding = deployment.itemStates.filter(
-    (s) => s.isRequired && !s.checked && !s.skipped,
-  ).length
+  const snapshot = deployment.checklist as unknown as ChecklistSnapshot
+  const sections = joinSnapshot(snapshot, deployment.itemStates)
+  const {
+    total: totalItems,
+    accounted: checkedItems,
+    requiredOutstanding,
+  } = summarise(deployment.itemStates)
 
   const sealed = deployment.status === 'COMPLETED' || deployment.status === 'CANCELLED'
   const heading = deployment.title || `${deployment.reference} · ${deployment.version}`
