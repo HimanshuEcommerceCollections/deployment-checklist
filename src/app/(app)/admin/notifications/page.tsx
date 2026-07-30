@@ -12,9 +12,14 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { notFound } from 'next/navigation'
 
 export const metadata = { title: 'Admin - Notifications' }
+
+/**
+ * Rows an admin may requeue. Must match RETRYABLE in the retry route — showing a
+ * button the route refuses with a 409 is worse than showing none.
+ */
+const RETRYABLE_STATUSES = ['FAILED', 'DEAD']
 
 export default async function NotificationsPage() {
   const ctx = await getRequestContext()
@@ -26,10 +31,14 @@ export default async function NotificationsPage() {
     take: 100,
   })
 
-  const statusColor = {
+  // Every OutboxStatus is listed. A missing key fell through to grey, which made
+  // a dead-lettered row look as unremarkable as a queued one.
+  const statusColor: Record<string, string> = {
     PENDING: 'bg-yellow-100 text-yellow-800',
+    SENDING: 'bg-blue-100 text-blue-800',
     SENT: 'bg-green-100 text-green-800',
     FAILED: 'bg-red-100 text-red-800',
+    DEAD: 'bg-red-200 text-red-900',
   }
 
   return (
@@ -60,17 +69,14 @@ export default async function NotificationsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {notifications.map((notif: any) => (
+              {notifications.map((notif) => (
                 <TableRow key={notif.id}>
-                  <TableCell className="text-sm font-mono">{notif.type}</TableCell>
-                  <TableCell className="text-sm">{notif.recipient}</TableCell>
+                  <TableCell className="text-sm font-mono">{notif.templateKey}</TableCell>
+                  <TableCell className="text-sm">
+                    {notif.toAddresses.join(', ') || '—'}
+                  </TableCell>
                   <TableCell>
-                    <Badge
-                      className={
-                        statusColor[notif.status as keyof typeof statusColor] ||
-                        'bg-gray-100 text-gray-800'
-                      }
-                    >
+                    <Badge className={statusColor[notif.status] ?? 'bg-gray-100 text-gray-800'}>
                       {notif.status}
                     </Badge>
                   </TableCell>
@@ -84,7 +90,7 @@ export default async function NotificationsPage() {
                     {notif.lastError}
                   </TableCell>
                   <TableCell>
-                    {notif.status === 'FAILED' && (
+                    {RETRYABLE_STATUSES.includes(notif.status) && (
                       <form action={`/api/admin/notifications/${notif.id}/retry`} method="POST">
                         <Button type="submit" size="sm" variant="outline">
                           Retry
