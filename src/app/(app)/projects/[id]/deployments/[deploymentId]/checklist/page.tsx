@@ -1,6 +1,7 @@
 import { getDeployment } from '@/features/deployments/actions/deployments.actions'
 import { DeploymentGauge } from '@/features/deployments/components/deployment-gauge'
 import { DeploymentSectionPanel } from '@/features/deployments/components/deployment-section-panel'
+import { PrintChecklistButton } from '@/features/deployments/components/print-checklist-button'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { notFound } from 'next/navigation'
@@ -83,9 +84,7 @@ export default async function DeploymentChecklistPage(props: {
           Progress saved automatically {checkedItems}/{totalItems} items checked
         </p>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.print()}>
-            Print / Save PDF
-          </Button>
+          <PrintChecklistButton />
           {checkedItems === totalItems && (
             <Button className="bg-green-600 hover:bg-green-700">
               ✓ Ready to Deploy
