@@ -1,12 +1,14 @@
-import { getTemplateVersion, publishTemplateVersion } from '@/features/admin/actions/template-versions.actions'
-import { getRequestContext } from '@/server/context'
-import { PERMISSIONS } from '@/lib/authz/permissions'
-import { requirePermission } from '@/lib/authz/authorize'
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { notFound } from 'next/navigation'
+
+import { Button } from '@/components/ui/button'
+import { TemplateVersionEditor } from '@/features/admin/components/template-version-editor'
+import { environmentsService } from '@/features/admin/server/environments-service'
+import { rolesService } from '@/features/admin/server/roles-service'
+import { templateVersionsService } from '@/features/admin/server/template-versions-service'
+import { can, requirePermission } from '@/lib/authz/authorize'
+import { PERMISSIONS } from '@/lib/authz/permissions'
+import { getRequestContext } from '@/server/context'
 
 export const metadata = { title: 'Template Version' }
 
@@ -22,67 +24,64 @@ export default async function TemplateVersionPage(props: {
     notFound()
   }
 
-  let version: any
+  // Services rather than the actions layer: this is already a server component
+  // holding a context, and the actions return loosely-typed results built for
+  // client callers.
+  let version: Awaited<ReturnType<typeof templateVersionsService.getVersion>>
   try {
-    version = await getTemplateVersion(params.id, params.versionId)
+    version = await templateVersionsService.getVersion(ctx, params.id, params.versionId)
   } catch {
     notFound()
   }
 
-  const statusColor = {
-    DRAFT: 'bg-gray-100 text-gray-800',
-    PUBLISHED: 'bg-green-100 text-green-800',
-    DEPRECATED: 'bg-red-100 text-red-800',
-  }
+  // Only needed to populate the item editor's choices, so a failure here must not
+  // take the editor down with it.
+  const [environments, roles] = await Promise.all([
+    environmentsService.listEnvironments(ctx).catch(() => []),
+    rolesService.listRoles(ctx).catch(() => []),
+  ])
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href={`/admin/templates/${params.id}`}>
-            <Button variant="ghost">← Back</Button>
-          </Link>
-          <div>
-            <h1 className="text-3xl font-bold">Version {version.versionNumber}</h1>
-            <Badge className={statusColor[version.status as keyof typeof statusColor]}>
-              {version.status}
-            </Badge>
-          </div>
-        </div>
-        {version.status === 'DRAFT' && (
-          <form
-            action={async () => {
-              'use server'
-              await publishTemplateVersion(params.id, params.versionId)
-            }}
-          >
-            <Button type="submit">Publish Version</Button>
-          </form>
-        )}
-      </div>
+      <Link href={`/admin/templates/${params.id}`}>
+        <Button variant="ghost">← Back to template</Button>
+      </Link>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Sections</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {version.sections && version.sections.length > 0 ? (
-            <div className="space-y-4">
-              {version.sections.map((section: any) => (
-                <div key={section.id} className="rounded-lg border p-4">
-                  <h3 className="font-semibold">{section.title}</h3>
-                  {section.description && (
-                    <p className="text-sm text-gray-600 mt-1">{section.description}</p>
-                  )}
-                  <p className="text-xs text-gray-500 mt-2">Order: {section.order}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-600">No sections yet.</p>
-          )}
-        </CardContent>
-      </Card>
+      <TemplateVersionEditor
+        templateId={params.id}
+        templateName={version.template.name}
+        versionId={version.id}
+        versionNumber={version.version}
+        status={version.status}
+        itemCount={version.itemCount}
+        requiredCount={version.requiredCount}
+        sections={version.sections.map((section) => ({
+          id: section.id,
+          key: section.key,
+          title: section.title,
+          description: section.description,
+          order: section.order,
+          items: section.items.map((item) => ({
+            id: item.id,
+            key: item.key,
+            label: item.label,
+            helpText: item.helpText,
+            order: item.order,
+            isRequired: item.isRequired,
+            evidenceRequired: item.evidenceRequired,
+            ownerRoleKey: item.ownerRoleKey,
+            environmentKeys: item.environmentKeys,
+          })),
+        }))}
+        environments={environments.map((environment) => ({
+          key: environment.key,
+          name: environment.name,
+        }))}
+        roles={roles.map((role) => ({ key: role.key, name: role.name }))}
+        canManage={can(ctx, PERMISSIONS.template.manage)}
+        canPublish={can(ctx, PERMISSIONS.template.publish)}
+        canDeprecate={can(ctx, PERMISSIONS.template.deprecate)}
+      />
     </div>
   )
 }

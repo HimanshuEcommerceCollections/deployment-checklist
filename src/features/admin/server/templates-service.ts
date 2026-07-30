@@ -75,6 +75,14 @@ export class TemplatesService {
             status: 'DRAFT',
             sections: [],
             createdById: ctx.actorId,
+            // Explicit because the soft-delete extension only stamps the
+            // TOP-LEVEL `data` of a create — it does not reach into a nested
+            // relation create. Without this the version row is written with no
+            // `deletedAt` key, and on MongoDB Prisma reads `deletedAt: null` as
+            // "present and null", so the draft is invisible to getVersion(),
+            // loadDraft(), and the versions list. The template would appear to
+            // have no versions at all. See src/lib/db/soft-delete-extension.ts.
+            deletedAt: null,
           },
         },
       },

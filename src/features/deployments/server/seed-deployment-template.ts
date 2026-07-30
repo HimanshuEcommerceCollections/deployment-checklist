@@ -163,6 +163,10 @@ export async function seedDeploymentTemplate(orgId: string, userId: string) {
             sectionCount: sections.length,
             itemCount,
             requiredCount: itemCount,
+            // Nested relation creates are not reached by the soft-delete
+            // extension, and a version with no `deletedAt` key is invisible to
+            // every filtered read on MongoDB. See soft-delete-extension.ts.
+            deletedAt: null,
           },
         },
       },

@@ -19,10 +19,23 @@ import { Prisma } from '@prisma/client'
  * empty" while the documents are plainly there.
  *
  * The fix is to make the field ALWAYS present: this extension injects
- * `deletedAt: null` on create, so the invariant holds for anything written
- * through Prisma. `prisma/migrations-data/0003-backfill-deleted-at.ts` repairs
- * documents written before the invariant existed, and `npm run doctor` checks it
- * so a regression is caught rather than discovered.
+ * `deletedAt: null` on create. `prisma/migrations-data/0003-backfill-deleted-at.ts`
+ * repairs documents written before the invariant existed, and `npm run doctor`
+ * checks it so a regression is caught rather than discovered.
+ *
+ * ── LIMITATION: nested creates are not covered ──────────────────────────────
+ * The hooks below rewrite the TOP-LEVEL `data` only. A nested relation create —
+ *
+ *   db.checklistTemplate.create({ data: { …, versions: { create: { … } } } })
+ *
+ * writes the child row untouched, so the child lands without a `deletedAt` key
+ * and is invisible to every filtered read. Recursing would mean resolving each
+ * relation key to its target model through the DMMF on every write, which is a
+ * lot of machinery on a hot path for two call sites.
+ *
+ * So nested creates must pass `deletedAt: null` explicitly. Both current ones do
+ * (`templates-service.ts`, `seed-deployment-template.ts`), and `npm run doctor`
+ * is the backstop that catches a new one that forgets.
  *
  * Reads then use the plain `deletedAt: null` filter, which keeps queries simple
  * and lets the compound indexes work directly. The alternative — an `$or` with
@@ -49,7 +62,6 @@ const SOFT_DELETE_MODELS = new Set<string>([
   'ProjectTemplate',
   'DeploymentRun',
   'DeploymentComment',
-  'Attachment',
 ])
 
 type AnyArgs = { where?: Record<string, unknown> } & Record<string, unknown>
