@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Notion__notion-fetch",
+      "mcp__claude_ai_Notion__notion-query-data-sources",
+      "mcp__claude_ai_Notion__notion-create-pages"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\tonu8\\.claude\\projects\\c--work-Deployment-Checklist\\memory"
+    ]
+  }
+}

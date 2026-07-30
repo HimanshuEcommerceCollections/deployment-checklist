@@ -1,19 +1,54 @@
-import { getDeployment } from '@/features/deployments/actions/deployments.actions'
-import { DeploymentGauge } from '@/features/deployments/components/deployment-gauge'
-import { DeploymentSectionPanel } from '@/features/deployments/components/deployment-section-panel'
-import { PrintChecklistButton } from '@/features/deployments/components/print-checklist-button'
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
 import { notFound } from 'next/navigation'
 
+import { Button } from '@/components/ui/button'
+import { getDeployment } from '@/features/deployments/actions/deployments.actions'
+import { DeploymentGauge } from '@/features/deployments/components/deployment-gauge'
+import {
+  type ChecklistItem,
+  DeploymentSectionPanel,
+} from '@/features/deployments/components/deployment-section-panel'
+import { PrintChecklistButton } from '@/features/deployments/components/print-checklist-button'
+
 export const metadata = { title: 'Deployment Checklist' }
+
+/**
+ * The checklist itself, rendered from the run's frozen snapshot.
+ *
+ * Structure comes from `DeploymentRun.checklist` — the template content copied in
+ * at creation — and tick state from `ChecklistItemState`, joined on the snapshot
+ * item id. Two sources on purpose: the snapshot is immutable so the checklist
+ * cannot change under a run in progress, while the states are what people write.
+ *
+ * This previously read `deployment.items`, which is not a field on DeploymentRun.
+ * Behind an `any` that silently evaluated to undefined, so every run rendered "No
+ * checklist items for this deployment" regardless of content, and the gauge sat at
+ * 0/0. The data had been correct the whole time.
+ */
+
+/** Shape of the frozen template content. Mirrors the ChecklistSnapshot type. */
+interface SnapshotItem {
+  id: string
+  label: string
+  helpText?: string | null
+  order: number
+  isRequired: boolean
+}
+
+interface SnapshotSection {
+  id: string
+  title: string
+  description?: string | null
+  order: number
+  items: SnapshotItem[]
+}
 
 export default async function DeploymentChecklistPage(props: {
   params: Promise<{ id: string; deploymentId: string }>
 }) {
   const params = await props.params
-  let deployment: any
 
+  let deployment
   try {
     deployment = await getDeployment(params.deploymentId)
   } catch {
@@ -22,27 +57,52 @@ export default async function DeploymentChecklistPage(props: {
 
   if (!deployment) notFound()
 
-  // Group items by sections (if they exist)
-  const sections = deployment.items
-    ? [
-        {
-          id: '1',
-          title: 'Deployment Items',
-          items: deployment.items.map((item: any) => ({
-            id: item.id,
-            title: item.title,
-            checked: item.checked,
-          })),
-        },
-      ]
-    : []
+  const snapshot = deployment.checklist as unknown as {
+    templateName?: string
+    version?: number
+    sections?: SnapshotSection[]
+  }
 
-  const totalItems = deployment.items?.length || 0
-  const checkedItems = deployment.items?.filter((i: any) => i.checked).length || 0
+  // Join tick state onto the snapshot by item id.
+  const stateByItemId = new Map(deployment.itemStates.map((state) => [state.itemId, state]))
+
+  const sections = [...(snapshot.sections ?? [])]
+    .sort((a, b) => a.order - b.order)
+    .map((section) => ({
+      id: section.id,
+      title: section.title,
+      description: section.description,
+      items: [...(section.items ?? [])]
+        .sort((a, b) => a.order - b.order)
+        .map((item): ChecklistItem => {
+          const state = stateByItemId.get(item.id)
+          return {
+            id: item.id,
+            label: item.label,
+            helpText: item.helpText,
+            isRequired: item.isRequired,
+            checked: state?.checked ?? false,
+            skipped: state?.skipped ?? false,
+            note: state?.note ?? null,
+            checkedByName: state?.checkedByName ?? null,
+            checkedAt: state?.checkedAt ?? null,
+          }
+        }),
+    }))
+
+  // Counted from item states rather than the snapshot: the states are what
+  // people actually wrote, and a skipped item is deliberately out of the gate.
+  const totalItems = deployment.itemStates.length
+  const checkedItems = deployment.itemStates.filter((s) => s.checked || s.skipped).length
+  const requiredOutstanding = deployment.itemStates.filter(
+    (s) => s.isRequired && !s.checked && !s.skipped,
+  ).length
+
+  const sealed = deployment.status === 'COMPLETED' || deployment.status === 'CANCELLED'
+  const heading = deployment.title || `${deployment.reference} · ${deployment.version}`
 
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div className="space-y-4">
         <div className="flex items-center gap-4">
           <Link href={`/projects/${params.id}/deployments/${params.deploymentId}`}>
@@ -50,16 +110,21 @@ export default async function DeploymentChecklistPage(props: {
           </Link>
         </div>
         <div>
-          <p className="text-xs font-mono text-gray-400 uppercase tracking-widest mb-2">Release Control</p>
-          <h1 className="text-4xl font-bold text-white">{deployment.title}</h1>
-          <p className="text-gray-400 mt-2">Work through every item before marking deployment complete</p>
+          <p className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">
+            {deployment.reference} · {deployment.environmentName} · {deployment.version}
+          </p>
+          <h1 className="text-4xl font-bold text-white">{heading}</h1>
+          <p className="mt-2 text-gray-400">
+            {snapshot.templateName ? `${snapshot.templateName} v${snapshot.version} — ` : ''}
+            {requiredOutstanding === 0
+              ? 'All required items are accounted for.'
+              : `${requiredOutstanding} required item${requiredOutstanding === 1 ? '' : 's'} still outstanding.`}
+          </p>
         </div>
       </div>
 
-      {/* Gauge */}
       <DeploymentGauge progress={checkedItems} total={totalItems} />
 
-      {/* Sections */}
       <div className="space-y-3">
         {sections.length > 0 ? (
           sections.map((section, idx) => (
@@ -67,29 +132,30 @@ export default async function DeploymentChecklistPage(props: {
               key={section.id}
               index={idx}
               title={section.title}
+              description={section.description}
               items={section.items}
               deploymentId={params.deploymentId}
+              readOnly={sealed}
             />
           ))
         ) : (
           <div className="rounded-lg border border-gray-700 p-8 text-center">
-            <p className="text-gray-400">No checklist items for this deployment</p>
+            <p className="text-gray-400">
+              This run has no checklist content. The template version it was created from had
+              no items for {deployment.environmentName}.
+            </p>
           </div>
         )}
       </div>
 
-      {/* Footer Actions */}
-      <div className="border-t border-gray-700 pt-6 flex items-center justify-between">
+      <div className="flex items-center justify-between border-t border-gray-700 pt-6">
         <p className="text-sm text-gray-400">
-          Progress saved automatically {checkedItems}/{totalItems} items checked
+          {sealed
+            ? `Sealed — this record is ${deployment.status.toLowerCase()} and no longer editable.`
+            : `Progress saved automatically · ${checkedItems}/${totalItems} items accounted for`}
         </p>
         <div className="flex gap-2">
           <PrintChecklistButton />
-          {checkedItems === totalItems && (
-            <Button className="bg-green-600 hover:bg-green-700">
-              ✓ Ready to Deploy
-            </Button>
-          )}
         </div>
       </div>
     </div>
