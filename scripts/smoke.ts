@@ -289,7 +289,13 @@ async function main() {
   const lifecycleRun = await db.deploymentRun.findFirst({
     where: { deletedAt: null, status: 'DRAFT' },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, projectId: true, reference: true, totalRequired: true },
+    select: {
+      id: true,
+      projectId: true,
+      reference: true,
+      totalItems: true,
+      totalRequired: true,
+    },
   })
 
   if (!lifecycleRun) {
@@ -319,6 +325,38 @@ async function main() {
     check(
       'console states what the gate is waiting for',
       lifecycleRun.totalRequired === 0 || consoleHtml.includes('outstanding'),
+    )
+
+    // ── Print / Save PDF ───────────────────────────────────────────────────
+    // The print stylesheet can only act on what is in the document. Collapsed
+    // sections used to be `{open && …}`, so printing a ten-section checklist
+    // produced nine bare headers and no items — silently, and the sheet is what
+    // gets filed with the release. These assertions are about the DOM contract
+    // the @media print block depends on.
+    const itemsInDom = (consoleHtml.match(/data-print-avoid-break/g) ?? []).length
+    // Whole opening tag, so attribute order cannot change the answer — and so a
+    // stray `hidden` elsewhere on the page cannot satisfy this by accident.
+    const panels = consoleHtml.match(/<div[^>]*data-print-expand[^>]*>/g) ?? []
+    const collapsed = panels.filter((tag) => /\shidden(=|\s|>)/.test(tag)).length
+
+    check(
+      'every checklist item is in the document, not only the open section',
+      itemsInDom >= lifecycleRun.totalItems,
+      `found ${itemsInDom} printable rows for ${lifecycleRun.totalItems} items`,
+    )
+    check(
+      'collapsed sections are hidden rather than dropped from the tree',
+      panels.length > 1 && collapsed === panels.length - 1,
+      `${collapsed} of ${panels.length} panels hidden — expected all but the open one`,
+    )
+    check('app chrome is excluded from print', consoleHtml.includes('no-print'))
+    check(
+      'the sheet identifies itself without the app around it',
+      consoleHtml.includes('print-only-block') && consoleHtml.includes('Environment:'),
+    )
+    check(
+      'tick state is printable as text, not just a checkbox',
+      consoleHtml.includes('print-only'),
     )
   }
 
