@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+/// Type-only, so the `server-only` guard in that module is erased at compile time.
+import type { ActionResult } from '@/lib/http/action-result'
 
 import { createDeployment } from '../actions/deployments.actions'
 
@@ -29,7 +31,9 @@ interface NewDeploymentFormProps {
   environments: EnvironmentOption[]
 }
 
-type State = { ok: boolean; message: string } | null
+/// The action returns the standard ActionResult envelope, where `message` is
+/// present only on failure — success carries `data`.
+type State = ActionResult<{ id: string }> | null
 
 export function NewDeploymentForm({
   projectId,

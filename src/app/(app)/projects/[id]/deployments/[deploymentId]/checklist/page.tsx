@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
-import { getDeployment } from '@/features/deployments/actions/deployments.actions'
+import { type DeploymentStatus, evaluateGate, isEditable } from '@/domain/deployments/lifecycle'
 import {
   type ChecklistSnapshot,
   joinSnapshot,
@@ -10,7 +10,11 @@ import {
 } from '@/features/deployments/checklist-snapshot'
 import { DeploymentGauge } from '@/features/deployments/components/deployment-gauge'
 import { DeploymentSectionPanel } from '@/features/deployments/components/deployment-section-panel'
+import { DeploymentStatusActions } from '@/features/deployments/components/deployment-status-actions'
+import { DeploymentStatusBadge } from '@/features/deployments/components/deployment-status-badge'
 import { PrintChecklistButton } from '@/features/deployments/components/print-checklist-button'
+import { deploymentsService } from '@/features/deployments/server/deployments-service'
+import { getRequestContext } from '@/server/context'
 
 export const metadata = { title: 'Deployment Checklist' }
 
@@ -32,10 +36,11 @@ export default async function DeploymentChecklistPage(props: {
   params: Promise<{ id: string; deploymentId: string }>
 }) {
   const params = await props.params
+  const ctx = await getRequestContext()
 
   let deployment
   try {
-    deployment = await getDeployment(params.deploymentId)
+    deployment = await deploymentsService.getDeployment(ctx, params.deploymentId)
   } catch {
     notFound()
   }
@@ -44,13 +49,21 @@ export default async function DeploymentChecklistPage(props: {
 
   const snapshot = deployment.checklist as unknown as ChecklistSnapshot
   const sections = joinSnapshot(snapshot, deployment.itemStates)
-  const {
-    total: totalItems,
-    accounted: checkedItems,
-    requiredOutstanding,
-  } = summarise(deployment.itemStates)
+  const { total: totalItems, accounted: checkedItems } = summarise(deployment.itemStates)
 
-  const sealed = deployment.status === 'COMPLETED' || deployment.status === 'CANCELLED'
+  /**
+   * Read-only comes from the state machine, not a hand-written status list. This
+   * was `status === 'COMPLETED' || status === 'CANCELLED'`, which missed FAILED
+   * and ROLLED_BACK — harmless while nothing could reach them, and a UI that
+   * offers ticks the server refuses now that everything can.
+   */
+  const sealed = !isEditable(deployment.status as DeploymentStatus)
+
+  /// The gate, not the gauge. Under ALL_REQUIRED a run reads GO with optional
+  /// items unticked, which is what marking them optional is for.
+  const gate = evaluateGate(snapshot.completionPolicy, deployment)
+  const transitions = deploymentsService.availableTransitions(ctx, deployment)
+
   const heading = deployment.title || `${deployment.reference} · ${deployment.version}`
 
   return (
@@ -65,17 +78,35 @@ export default async function DeploymentChecklistPage(props: {
           <p className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">
             {deployment.reference} · {deployment.environmentName} · {deployment.version}
           </p>
-          <h1 className="text-4xl font-bold text-white">{heading}</h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-4xl font-bold text-white">{heading}</h1>
+            <DeploymentStatusBadge status={deployment.status} />
+          </div>
           <p className="mt-2 text-gray-400">
             {snapshot.templateName ? `${snapshot.templateName} v${snapshot.version} — ` : ''}
-            {requiredOutstanding === 0
-              ? 'All required items are accounted for.'
-              : `${requiredOutstanding} required item${requiredOutstanding === 1 ? '' : 's'} still outstanding.`}
+            {gate.passes
+              ? gate.policy === 'MANUAL'
+                ? 'No checklist gate on this template — completion is by permission alone.'
+                : 'Every gating item is accounted for.'
+              : gate.message}
           </p>
         </div>
       </div>
 
       <DeploymentGauge progress={checkedItems} total={totalItems} />
+
+      {transitions.length > 0 && (
+        <div className="rounded-xl border border-gray-700 bg-gray-900/50 p-6">
+          <p className="mb-3 font-mono text-xs uppercase tracking-widest text-gray-400">
+            Launch control
+          </p>
+          <DeploymentStatusActions
+            deploymentId={deployment.id}
+            reference={deployment.reference}
+            options={transitions}
+          />
+        </div>
+      )}
 
       <div className="space-y-3">
         {sections.length > 0 ? (

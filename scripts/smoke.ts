@@ -225,6 +225,46 @@ async function main() {
     })
   }
 
+  // ── The deployment lifecycle, over real HTTP ──────────────────────────────
+  // The console renders the transition buttons from the service, so the pages
+  // are the check that a run can actually be driven to a terminal state. Before
+  // Phase 4 a run was created DRAFT and nothing could ever move it.
+  const lifecycleRun = await db.deploymentRun.findFirst({
+    where: { deletedAt: null, status: 'DRAFT' },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, projectId: true, reference: true, totalRequired: true },
+  })
+
+  if (!lifecycleRun) {
+    check('a draft run exists to drive', false, 'seed or create one, then re-run')
+  } else {
+    const runPath = `/projects/${lifecycleRun.projectId}/deployments/${lifecycleRun.id}`
+
+    const detail = await fetch(`${BASE}${runPath}`, {
+      headers: { cookie: jar.header() },
+      redirect: 'manual',
+    })
+    const detailHtml = detail.status === 200 ? await detail.text() : ''
+    check('GET a deployment → 200', detail.status === 200, `got ${detail.status}`)
+    check('run detail shows the status badge', detailHtml.includes('Draft'))
+    // A DRAFT run offers exactly start and cancel.
+    check('run detail offers Start deployment', detailHtml.includes('Start deployment'))
+    check('run detail does not offer Complete yet', !detailHtml.includes('Complete deployment'))
+
+    const console_ = await fetch(`${BASE}${runPath}/checklist`, {
+      headers: { cookie: jar.header() },
+      redirect: 'manual',
+    })
+    const consoleHtml = console_.status === 200 ? await console_.text() : ''
+    check('GET the checklist console → 200', console_.status === 200, `got ${console_.status}`)
+    check('console renders launch control', consoleHtml.includes('Launch control'))
+    // The gate readout, not the gauge: HOLD while required items are outstanding.
+    check(
+      'console states what the gate is waiting for',
+      lifecycleRun.totalRequired === 0 || consoleHtml.includes('outstanding'),
+    )
+  }
+
   // ── Session verification is DB-backed, not just JWT ───────────────────────
   // Bumping sessionEpoch must invalidate the existing token immediately. This is
   // the mechanism that makes suspension and password change take effect at once.

@@ -1,38 +1,55 @@
 'use client'
 
-import { useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useRouter } from 'next/navigation'
+import { useState, useTransition } from 'react'
+
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
+
 import { addDeploymentComment } from '../actions/deployments.actions'
+
+export interface DeploymentCommentView {
+  id: string
+  /** The model field is `body`. This component used to read `content`. */
+  body: string
+  createdAt: string | Date
+  authorName: string | null
+  author?: { name: string | null } | null
+}
 
 interface DeploymentCommentsProps {
   deploymentId: string
-  comments: any[]
+  comments: DeploymentCommentView[]
 }
 
-export function DeploymentComments({
-  deploymentId,
-  comments,
-}: DeploymentCommentsProps) {
-  const [content, setContent] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
+export function DeploymentComments({ deploymentId, comments }: DeploymentCommentsProps) {
+  const router = useRouter()
+  const [body, setBody] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!content.trim()) return
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (!body.trim()) return
 
-    setIsSubmitting(true)
-    try {
-      await addDeploymentComment(deploymentId, { content })
-      setContent('')
-      // In a real app, would refresh or update state
-      window.location.reload()
-    } catch (error) {
-      console.error(error)
-    } finally {
-      setIsSubmitting(false)
+    setError(null)
+
+    /**
+     * `body`, not `content`. The schema is `.strict()`, so the old payload was
+     * rejected twice over — an unrecognised key and a missing required one — and
+     * because the result was never checked before a `window.location.reload()`,
+     * every comment vanished with no message at all.
+     */
+    const result = await addDeploymentComment(deploymentId, { body: body.trim() })
+
+    if (!result.ok) {
+      setError(result.message)
+      return
     }
+
+    setBody('')
+    startTransition(() => router.refresh())
   }
 
   return (
@@ -43,32 +60,42 @@ export function DeploymentComments({
       <CardContent className="space-y-6">
         {comments.length > 0 && (
           <div className="space-y-4">
-            {comments.map((comment: any) => (
+            {comments.map((comment) => (
               <div key={comment.id} className="rounded-lg border p-4">
                 <div className="flex items-center justify-between">
-                  <div className="font-medium">{comment.author?.name}</div>
-                  <div className="text-sm text-gray-600">
-                    {new Date(comment.createdAt).toLocaleDateString()}
+                  <div className="font-medium">
+                    {comment.author?.name ?? comment.authorName ?? 'Unknown'}
                   </div>
+                  <time
+                    dateTime={new Date(comment.createdAt).toISOString()}
+                    className="text-sm text-muted-foreground"
+                  >
+                    {new Date(comment.createdAt).toLocaleString()}
+                  </time>
                 </div>
-                <p className="mt-2 whitespace-pre-wrap text-gray-700">
-                  {comment.content}
-                </p>
+                <p className="mt-2 whitespace-pre-wrap text-sm">{comment.body}</p>
               </div>
             ))}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-3 border-t pt-6">
+          {error && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
           <Textarea
-            placeholder="Add a comment..."
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            disabled={isSubmitting}
+            placeholder="Add a comment…"
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            disabled={pending}
             maxLength={5000}
+            aria-label="Comment"
           />
-          <Button type="submit" disabled={isSubmitting || !content.trim()}>
-            {isSubmitting ? 'Posting...' : 'Post Comment'}
+          <Button type="submit" disabled={pending || !body.trim()}>
+            {pending ? 'Posting…' : 'Post comment'}
           </Button>
         </form>
       </CardContent>

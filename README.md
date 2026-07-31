@@ -75,7 +75,7 @@ depends on them. Three ways to get one:
 | `npm run doctor` | pre-flight check: env, connectivity, transactions, seed, invariants, admin |
 | `npm run smoke` | end-to-end HTTP check against a running dev server |
 | | ⚠️ don't run `build` while `dev` is running — both write `.next`, and the dev server starts 500ing until it recompiles |
-| `npm test` | 103 unit + integration tests |
+| `npm test` | 151 unit + integration tests |
 | `npm run typecheck` · `npm run lint` | strict TS, plus the architectural lint rules |
 | `npm run build` | production build |
 | `npm run db:push` · `db:seed` · `db:migrate-data` · `db:studio` | database |
@@ -103,8 +103,8 @@ else. Seed it once with `db push` → `db:migrate-data` → `db:seed` against th
 
 ## What is built
 
-**Phase 0 — Foundation**, **Phase 1 — Identity** and **Phase 2 — Projects & environments**
-are complete and verified. Build order and remaining phases:
+**Phase 0 — Foundation**, **Phase 1 — Identity**, **Phase 2 — Projects & environments** and
+**Phase 4 — The console** are complete and verified. Build order and remaining phases:
 [ARCHITECTURE.md](ARCHITECTURE.md#suggested-build-order).
 
 <table>
@@ -124,14 +124,16 @@ are complete and verified. Build order and remaining phases:
 - Tailwind v4 theme from the reference design, dark + light
 - Projects and environments CRUD, memberships
 - Soft delete **and restore**, through a working trash
+- The full deployment lifecycle — start, block, complete, fail, cancel, roll back
+- The readiness gate, with GO/HOLD from the completion policy
 
 </td><td valign="top">
 
 **Verified**
 
 - 0 TypeScript errors, 0 lint errors
-- 103 tests passing
-- 24/24 end-to-end smoke checks
+- 151 tests passing
+- 31/31 end-to-end smoke checks
 - Production build clean
 - Seed is idempotent
 - Reference HTML's 10 sections / 49 items seeded as `Production Deployment v1`
@@ -139,13 +141,42 @@ are complete and verified. Build order and remaining phases:
 </td></tr>
 </table>
 
-**Partly built, ahead of the build order:** the template version editor, deployment
-creation with a checklist snapshot, and the console that ticks items. Phases 3 and 4 own
-finishing them.
+**Partly built:** the template version editor is done bar version diff (Phase 3).
 
-**Not built yet** (by design — see the build order): comments, history grid, dashboard
-metrics, global search. The dashboard is a placeholder that deliberately does **not** fake
-its stat tiles, and `/search` returns mock rows until Phase 6 gives it an index.
+**Not built yet** (by design — see the build order): editing and deleting comments, the
+history grid, dashboard metrics, global search. The dashboard is a placeholder that
+deliberately does **not** fake its stat tiles, `/search` returns mock rows until Phase 6
+gives it an index, and API keys can be minted but authenticate nothing until a REST door
+exists.
+
+### The release gate
+
+A run is created `DRAFT` and driven through the state machine in
+[src/domain/deployments/lifecycle.ts](src/domain/deployments/lifecycle.ts):
+
+```
+DRAFT ──start──▶ IN_PROGRESS ──complete──▶ COMPLETED ──rollback──▶ ROLLED_BACK
+  │                │      ▲                    
+  │                │   unblock                 
+  │             block  │                        
+  │                ▼    │                      
+  │              BLOCKED┘                      
+  └──cancel──▶ CANCELLED        IN_PROGRESS/BLOCKED ──fail──▶ FAILED
+```
+
+Three things worth knowing:
+
+- **GO/HOLD is not a status.** It is computed from the snapshot's `completionPolicy`
+  (`ALL_ITEMS` · `ALL_REQUIRED` · `MANUAL`). Under `ALL_REQUIRED` a run reads GO with
+  optional items unticked — the gauge says 40%, the gate says go, and both are right.
+- **The policy comes from the run's snapshot, never from the template.** Editing a
+  template's policy must not move the bar for a release already in flight.
+- **`deployment.production` applies to every transition, not just create.** An engineer who
+  may complete a staging run cannot seal a production one, with no code change — it comes
+  from `isProductionEnvironment` in the authorization scope.
+
+Completing is conditional on the status it was validated against, so two people pressing
+Complete at the same moment cannot both win, and only one completion email is queued.
 
 ### Deleting is never destroying
 
