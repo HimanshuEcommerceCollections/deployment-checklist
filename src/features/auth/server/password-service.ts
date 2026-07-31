@@ -61,9 +61,26 @@ export class PasswordService {
     const rawToken = generateToken()
 
     await db.$transaction(async (tx) => {
-      // Invalidate outstanding tokens so only the newest link works.
+      /**
+       * Invalidate outstanding tokens so only the newest link works.
+       *
+       * The `OR` is load-bearing, and this swept nothing at all without it.
+       * `consumedAt` is `DateTime?` with no default, so Prisma omits it on insert
+       * and the field is ABSENT rather than null — and Prisma's MongoDB connector
+       * reads `consumedAt: null` as "present *and* null", so it matched zero rows.
+       * Every reset link ever issued stayed live for its full TTL.
+       *
+       * Same trap as `deletedAt`, which src/lib/db/soft-delete-extension.ts exists
+       * to survive — but AuthToken is not one of its models and this is not that
+       * field, so nothing was stamping it. Matching both shapes fixes old rows too,
+       * where enforcing the invariant would have needed a backfill.
+       */
       await tx.authToken.updateMany({
-        where: { userId: user.id, type: 'PASSWORD_RESET', consumedAt: null },
+        where: {
+          userId: user.id,
+          type: 'PASSWORD_RESET',
+          OR: [{ consumedAt: null }, { consumedAt: { isSet: false } }],
+        },
         data: { consumedAt: new Date() },
       })
 
