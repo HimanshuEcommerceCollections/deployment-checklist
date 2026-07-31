@@ -61,7 +61,10 @@ const MAIN: NavSection = {
 const ADMIN: NavSection = {
   label: 'Administration',
   items: [
-    { label: 'Projects', href: '/admin/projects', icon: FolderKanbanIcon, permission: PERMISSIONS.project.edit, matchPrefix: true },
+    /// "Manage Projects", not "Projects" — the sidebar already has a Projects
+    /// entry above, and two identically-labelled links reading differently by
+    /// section is a coin toss for whoever is clicking.
+    { label: 'Manage Projects', href: '/admin/projects', icon: FolderKanbanIcon, permission: PERMISSIONS.project.edit, matchPrefix: true },
     { label: 'Templates', href: '/admin/templates', icon: ClipboardListIcon, permission: PERMISSIONS.template.read, matchPrefix: true },
     { label: 'Environments', href: '/admin/environments', icon: ServerIcon, permission: PERMISSIONS.environment.manage },
     { label: 'Users', href: '/admin/users', icon: UsersIcon, permission: PERMISSIONS.user.read, matchPrefix: true },
