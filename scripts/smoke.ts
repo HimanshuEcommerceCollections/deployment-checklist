@@ -198,6 +198,63 @@ async function main() {
     `got ${envMissing.status}`,
   )
 
+  // ── User management ──────────────────────────────────────────────────────
+  // /admin/users was read-only plus Invite until Phase 7 — updateUser, deleteUser
+  // and the invitation resend/revoke pair all existed with no caller.
+  const managed = await db.user.findFirstOrThrow({
+    where: { deletedAt: null, email: EMAIL },
+    select: { id: true, email: true, roleIds: true },
+  })
+  const managedRole = await db.role.findFirstOrThrow({
+    where: { id: { in: managed.roleIds } },
+    select: { id: true, name: true },
+  })
+
+  const userList = await fetch(`${BASE}/admin/users`, {
+    headers: { cookie: jar.header() },
+    redirect: 'manual',
+  })
+  const userListHtml = userList.status === 200 ? await userList.text() : ''
+  check('GET /admin/users → 200', userList.status === 200, `got ${userList.status}`)
+  check('user list offers a per-row action', userListHtml.includes('Manage'))
+  // The Roles column did not exist before, and rendering roleIds raw is the
+  // obvious way to get it wrong. Only the rendered markup is asserted — ids
+  // legitimately appear in the RSC flight payload for the client components.
+  /// Strip every script block, not just up to the first one — Next puts preload
+  /// scripts in <head>, so splitting on the first would leave nothing but the head.
+  const rendered = userListHtml.replace(/<script[\s\S]*?<\/script>/g, '')
+  check(
+    'user list resolves role names rather than ids',
+    rendered.includes(managedRole.name) && !rendered.includes(managedRole.id),
+    `expected "${managedRole.name}" in the markup, not ${managedRole.id}`,
+  )
+  check(
+    'user list does not ship the permission catalog',
+    !userListHtml.includes('"permissions"'),
+    'whole role rows are reaching the browser',
+  )
+
+  const userDetail = await fetch(`${BASE}/admin/users/${managed.id}`, {
+    headers: { cookie: jar.header() },
+    redirect: 'manual',
+  })
+  const userDetailHtml = userDetail.status === 200 ? await userDetail.text() : ''
+  check('GET /admin/users/<id> → 200', userDetail.status === 200, `got ${userDetail.status}`)
+  check('user detail renders the access form', userDetailHtml.includes('Organization-wide roles'))
+  check('user detail flags your own row', userDetailHtml.includes('You'))
+  // Self-deletion is refused server-side; the UI should not offer it either.
+  check(
+    'user detail withholds delete on your own account',
+    !userDetailHtml.includes('Delete user'),
+    'the confirm dialog should be absent for self',
+  )
+
+  const unknownUser = await fetch(`${BASE}/admin/users/ffffffffffffffffffffffff`, {
+    headers: { cookie: jar.header() },
+    redirect: 'manual',
+  })
+  check('unknown user id → 404', unknownUser.status === 404, `got ${unknownUser.status}`)
+
   // ── Trash renders real soft-deleted rows ─────────────────────────────────
   // Soft-delete a project underneath the page rather than trusting an empty
   // "Trash is empty" render, which would pass whether or not the query works.

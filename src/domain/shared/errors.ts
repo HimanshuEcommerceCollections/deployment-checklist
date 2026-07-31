@@ -62,8 +62,14 @@ export class NotFoundError extends AppError {
   readonly code = 'NOT_FOUND' as const
   readonly httpStatus = 404
 
+  /**
+   * The id is captured on the instance for logs but deliberately kept OUT of the
+   * message, for the reason in the header — echoing it back tells the caller which
+   * ids exist. Both branches of the ternary that used to be here were identical,
+   * which read as an unfinished intention rather than a decision.
+   */
   constructor(entity: string, id?: string) {
-    super(id ? `${entity} not found` : `${entity} not found`)
+    super(`${entity} not found`)
     this.entity = entity
     this.entityId = id
   }
