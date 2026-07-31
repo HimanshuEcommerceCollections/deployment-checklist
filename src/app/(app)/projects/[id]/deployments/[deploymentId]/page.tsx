@@ -1,15 +1,20 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { getDeployment } from '@/features/deployments/actions/deployments.actions'
 import {
   type ChecklistSnapshot,
   joinSnapshot,
   summarise,
 } from '@/features/deployments/checklist-snapshot'
 import { DeploymentComments } from '@/features/deployments/components/deployment-comments'
+import { DeploymentStatusActions } from '@/features/deployments/components/deployment-status-actions'
+import { DeploymentStatusBadge } from '@/features/deployments/components/deployment-status-badge'
+import { deploymentsService } from '@/features/deployments/server/deployments-service'
+import { formatDuration, readiness } from '@/domain/deployments/lifecycle'
+import { getRequestContext } from '@/server/context'
 
 export const metadata = { title: 'Deployment' }
 
@@ -32,10 +37,11 @@ export default async function DeploymentPage(props: {
   params: Promise<{ id: string; deploymentId: string }>
 }) {
   const params = await props.params
+  const ctx = await getRequestContext()
 
   let deployment
   try {
-    deployment = await getDeployment(params.deploymentId)
+    deployment = await deploymentsService.getDeployment(ctx, params.deploymentId)
   } catch {
     notFound()
   }
@@ -46,8 +52,27 @@ export default async function DeploymentPage(props: {
   const sections = joinSnapshot(snapshot, deployment.itemStates)
   const { total, accounted, requiredOutstanding, percent } = summarise(deployment.itemStates)
 
+  /// Straight from the service, so a button can never offer something the
+  /// transition would refuse.
+  const transitions = deploymentsService.availableTransitions(ctx, deployment)
+  const gate = readiness(
+    deployment.status as never,
+    snapshot.completionPolicy,
+    deployment,
+  )
+
   const heading = deployment.title || `${deployment.reference} · ${deployment.version}`
   const checklistHref = `/projects/${params.id}/deployments/${params.deploymentId}/checklist`
+
+  /// Whichever outcome actually happened. Only one of these is ever set.
+  const outcome =
+    deployment.failureReason
+      ? { label: 'Failure reason', value: deployment.failureReason }
+      : deployment.cancelReason
+        ? { label: 'Cancellation reason', value: deployment.cancelReason }
+        : deployment.rollbackReason
+          ? { label: 'Rollback reason', value: deployment.rollbackReason }
+          : null
 
   return (
     <div className="space-y-6">
@@ -62,20 +87,75 @@ export default async function DeploymentPage(props: {
             {deployment.reference} · {deployment.version}
             {snapshot.templateName ? ` · ${snapshot.templateName} v${snapshot.version}` : ''}
           </p>
-          <h1 className="text-3xl font-bold">{heading}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold">{heading}</h1>
+            <DeploymentStatusBadge status={deployment.status} />
+            {deployment.isProduction && (
+              <Badge className="bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
+                Production
+              </Badge>
+            )}
+          </div>
         </div>
         <Link href={checklistHref}>
           <Button>Open checklist</Button>
         </Link>
       </div>
 
+      {transitions.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">
+              {gate === 'SEALED'
+                ? 'This run is sealed'
+                : gate === 'GO'
+                  ? 'Ready to go'
+                  : 'On hold'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DeploymentStatusActions
+              deploymentId={deployment.id}
+              reference={deployment.reference}
+              options={transitions}
+            />
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-6 md:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium">Status</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-lg font-semibold">{deployment.status}</p>
+          <CardContent className="space-y-2">
+            <DeploymentStatusBadge status={deployment.status} />
+            <dl className="space-y-1 text-xs text-muted-foreground">
+              {deployment.startedAt && (
+                <div>
+                  <dt className="inline">Started </dt>
+                  <dd className="inline">
+                    {new Date(deployment.startedAt).toLocaleString()}
+                    {deployment.startedByName ? ` by ${deployment.startedByName}` : ''}
+                  </dd>
+                </div>
+              )}
+              {deployment.completedAt && (
+                <div>
+                  <dt className="inline">Completed </dt>
+                  <dd className="inline">
+                    {new Date(deployment.completedAt).toLocaleString()}
+                    {deployment.completedByName ? ` by ${deployment.completedByName}` : ''}
+                  </dd>
+                </div>
+              )}
+              {deployment.durationMs !== null && (
+                <div>
+                  <dt className="inline">Duration </dt>
+                  <dd className="inline font-mono">{formatDuration(deployment.durationMs)}</dd>
+                </div>
+              )}
+            </dl>
           </CardContent>
         </Card>
 
@@ -115,6 +195,17 @@ export default async function DeploymentPage(props: {
           </CardContent>
         </Card>
       </div>
+
+      {outcome && (
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">{outcome.label}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="whitespace-pre-wrap text-sm">{outcome.value}</p>
+          </CardContent>
+        </Card>
+      )}
 
       {deployment.releaseNotes && (
         <Card>

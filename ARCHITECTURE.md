@@ -186,6 +186,19 @@ Full tree with per-directory rules and a "where does this file go?" decision tab
 
 Two corrections to the brief, both adopted: your notification list mentions **Deployment Failed** but your status list omitted `FAILED`, and rollback workflows appear under future features while `ROLLED_BACK` is cheap to model now. Both are in the schema — full transition table, guards, and side effects in [docs/10](docs/10-deployment-lifecycle.md).
 
+**Where it lives.** The transition table, the gate and `GO`/`HOLD` are one pure module,
+[src/domain/deployments/lifecycle.ts](src/domain/deployments/lifecycle.ts), with no database
+or framework imports — so it is unit-testable, and the console can ask it the same question
+the service enforces. `DeploymentsService.transition()` is the single door that applies it:
+permission → legality → gate → conditional write → audit → outbox, in that order. There is
+deliberately no `startDeployment`/`completeDeployment` pair of methods; seven copies of
+those six steps is seven chances for them to drift.
+
+`availableTransitions()` is what the UI renders from, which is why a button can never offer
+something the service would refuse. It returns unavailable transitions *with the reason*
+rather than omitting them — "Complete deployment · 3 required items outstanding" tells an
+operator what to do next, where a missing button tells them nothing.
+
 ---
 
 ## Non-negotiables before this goes to production
@@ -229,10 +242,13 @@ Ordered by cost of getting them wrong. Detail in [docs/13](docs/13-recommendatio
 ## Suggested build order
 
 Each phase ships something demonstrable and leaves the system deployable.
-**Phases 0–2 are complete and verified** — 103 tests, 24/24 end-to-end smoke checks, clean
-build. Phases 3 and 4 are partly built ahead of order: the template version editor and a
-working checklist console exist, but neither phase has been closed out. See
-[README](README.md) to run it.
+**Phases 0–2 and 4 are complete and verified** — 151 tests, 31/31 end-to-end smoke checks,
+clean build. Phase 3 is all but done: the template version editor, publish, deprecate and
+reorder are built; only version diff is outstanding. See [README](README.md) to run it.
+
+Phase 4 was reached before Phase 3 closed because run creation and the console already
+existed — what was missing was the half that makes it a release gate rather than a form.
+See [§ Deployment lifecycle](#deployment-lifecycle-in-one-diagram).
 
 | Phase | Scope | Why here |
 |---|---|---|
@@ -240,7 +256,7 @@ working checklist console exist, but neither phase has been closed out. See
 | **1. Identity** ✅ | Auth.js credentials, invite → accept → password, reset, permission catalog + guard, audit core | every later feature calls `can()` and `audit()` |
 | **2. Projects & environments** ✅ | CRUD, soft delete + restore, memberships | deployments need a project |
 | **3. Templates** | template + versions, embedded section/item editor, reorder, duplicate, publish, version diff | deployments need a template to snapshot |
-| **4. The console** | run creation with snapshot, `ChecklistItemState`, optimistic toggles, gauge, readiness gate, state machine | the actual product; the HTML made real |
+| **4. The console** ✅ | run creation with snapshot, `ChecklistItemState`, optimistic toggles, gauge, readiness gate, state machine | the actual product; the HTML made real |
 | **5. Collaboration** | comments (markdown), deployment timeline from audit | fits the run detail page already built |
 | **6. Visibility** | history grid (search/filter/sort/paginate/export), dashboard, global search | needs data from phase 4 to be meaningful |
 | **7. Admin & settings** | users, roles, environments, settings, audit viewer, restore bin | admin surface over everything above |
