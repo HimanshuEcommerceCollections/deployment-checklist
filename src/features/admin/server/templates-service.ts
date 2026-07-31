@@ -9,7 +9,17 @@ import { db } from '@/lib/db/prisma'
 import type { CreateTemplateInput, UpdateTemplateInput } from '../schemas/templates.schema'
 
 export class TemplatesService {
-  /// key is unique per organization — probe for a free suffix.
+  /**
+   * key is unique per organization — probe for a free suffix.
+   *
+   * `deletedAt: undefined` opts this query out of the soft-delete filter, which
+   * would otherwise hide the very rows that can collide:
+   * `@@unique([organizationId, key])` still counts soft-deleted templates, so a
+   * probe that sees only live rows reports a taken key as free and the following
+   * `create` dies on the index. The extension keys off the field being present,
+   * so naming it with `undefined` is the opt-out and Prisma drops it from the
+   * filter. See src/lib/db/soft-delete-extension.ts.
+   */
   private async resolveKey(ctx: RequestContext, name: string, excludeId?: string) {
     const base =
       name
@@ -24,6 +34,7 @@ export class TemplatesService {
       const clash = await db.checklistTemplate.findFirst({
         where: {
           organizationId: ctx.organizationId,
+          deletedAt: undefined,
           key,
           ...(excludeId ? { id: { not: excludeId } } : {}),
         },
@@ -135,6 +146,36 @@ export class TemplatesService {
       entityType: 'Template',
       entityId: template.id,
       entityLabel: template.name,
+    })
+
+    return template
+  }
+
+  async restoreTemplate(ctx: RequestContext, id: string) {
+    requirePermission(ctx, PERMISSIONS.template.restore)
+
+    const deleted = await db.checklistTemplate.findFirstOrThrow({
+      where: { id, organizationId: ctx.organizationId, deletedAt: { not: null } },
+      select: { id: true, name: true, key: true },
+    })
+
+    const key = await this.resolveKey(ctx, deleted.name, deleted.id)
+
+    const template = await db.checklistTemplate.update({
+      where: { id: deleted.id },
+      data: { deletedAt: null, deletedById: null, key, updatedById: ctx.actorId },
+    })
+
+    /// Versions need no attention: deleteTemplate does not cascade to them, so
+    /// they are still live and reachable the moment the template is back.
+
+    await audit.record(db, ctx, AUDIT_ACTIONS.template.restored, {
+      entityType: 'Template',
+      entityId: template.id,
+      entityLabel: template.name,
+      templateId: template.id,
+      summary:
+        key === deleted.key ? undefined : `Restored as ${key} — ${deleted.key} was taken`,
     })
 
     return template

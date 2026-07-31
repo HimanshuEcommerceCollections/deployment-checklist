@@ -3,7 +3,13 @@
     "allow": [
       "mcp__claude_ai_Notion__notion-fetch",
       "mcp__claude_ai_Notion__notion-query-data-sources",
-      "mcp__claude_ai_Notion__notion-create-pages"
+      "mcp__claude_ai_Notion__notion-create-pages",
+      "PowerShell(Get-NetTCPConnection -LocalPort 27017 -ErrorAction SilentlyContinue)",
+      "Bash(DATABASE_URL=\"mongodb://127.0.0.1:27017/deployment_checklist_test?replicaSet=rs0&directConnection=true\" npx prisma db push --skip-generate)",
+      "Bash(DATABASE_URL=\"mongodb://127.0.0.1:27017/deployment_checklist_test?replicaSet=rs0&directConnection=true\" npm run db:migrate-data)",
+      "Bash(DATABASE_URL=\"mongodb://127.0.0.1:27017/deployment_checklist_test?replicaSet=rs0&directConnection=true\" npm run db:seed)",
+      "Bash(DATABASE_URL=\"mongodb://127.0.0.1:27017/deployment_checklist_test?replicaSet=rs0&directConnection=true\" npm run doctor)",
+      "Bash(APP_URL=\"http://localhost:3001\" DATABASE_URL=\"mongodb://127.0.0.1:27017/deployment_checklist_test?replicaSet=rs0&directConnection=true\" npm run smoke)"
     ],
     "additionalDirectories": [
       "c:\\Users\\tonu8\\.claude\\projects\\c--work-Deployment-Checklist\\memory"

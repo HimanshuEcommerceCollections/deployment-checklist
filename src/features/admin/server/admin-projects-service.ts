@@ -21,7 +21,18 @@ function keyify(value: string) {
     .slice(0, 12)
 }
 
-/// key and slug are unique per organization, so probe for a free suffix.
+/**
+ * key and slug are unique per organization, so probe for a free suffix.
+ *
+ * `deletedAt: undefined` is load-bearing. `@@unique([organizationId, key])` does
+ * not exclude soft-deleted rows, so a deleted project still occupies its key in
+ * the index — but the soft-delete extension would otherwise append
+ * `deletedAt: null` here and hide exactly the row that is about to collide. The
+ * probe would report the key free and `create` would then fail on the unique
+ * index with an opaque 500. The extension keys off presence, not value, so
+ * naming the field with `undefined` opts this one query out and lets Prisma drop
+ * it from the filter. See src/lib/db/soft-delete-extension.ts.
+ */
 async function resolveIdentifiers(
   organizationId: string,
   name: string,
@@ -39,6 +50,7 @@ async function resolveIdentifiers(
     const clash = await db.project.findFirst({
       where: {
         organizationId,
+        deletedAt: undefined,
         OR: [{ key }, { slug }],
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
@@ -133,15 +145,78 @@ export class AdminProjectsService {
   async deleteProject(ctx: RequestContext, id: string) {
     requirePermission(ctx, PERMISSIONS.project.delete)
 
+    /// Resolve inside the tenant first. `update({ where: { id } })` alone would
+    /// happily soft-delete another organization's project for anyone holding
+    /// `project.delete` — the id is the only thing it checks.
+    await db.project.findFirstOrThrow({
+      where: { id, organizationId: ctx.organizationId, deletedAt: null },
+      select: { id: true },
+    })
+
     const project = await db.project.update({
       where: { id },
-      data: { deletedAt: new Date(), updatedById: ctx.actorId },
+      data: { deletedAt: new Date(), deletedById: ctx.actorId, updatedById: ctx.actorId },
     })
 
     await audit.record(db, ctx, AUDIT_ACTIONS.project.deleted, {
       entityType: 'Project',
       entityId: project.id,
       entityLabel: project.name,
+    })
+
+    return project
+  }
+
+  async restoreProject(ctx: RequestContext, id: string) {
+    requirePermission(ctx, PERMISSIONS.project.restore)
+
+    const deleted = await db.project.findFirstOrThrow({
+      where: { id, organizationId: ctx.organizationId, deletedAt: { not: null } },
+      select: { id: true, name: true, key: true, slug: true },
+    })
+
+    /**
+     * Normally unreachable, and kept anyway.
+     *
+     * `@@unique([organizationId, key])` does not exclude soft-deleted rows, so a
+     * project in the trash still holds its key and slug — nothing can take them
+     * while it sits there, and the restore below gets them back unchanged. That
+     * guarantee disappears the moment someone adds `deletedAt` to those indexes
+     * to allow key reuse, which is the obvious way to implement that. Re-resolve
+     * instead of dying on an index violation the operator cannot act on.
+     */
+    const clash = await db.project.findFirst({
+      where: {
+        organizationId: ctx.organizationId,
+        deletedAt: null,
+        OR: [{ key: deleted.key }, { slug: deleted.slug }],
+      },
+      select: { id: true },
+    })
+
+    const identifiers = clash
+      ? await resolveIdentifiers(ctx.organizationId, deleted.name, deleted.key, deleted.id)
+      : { key: deleted.key, slug: deleted.slug }
+
+    const project = await db.project.update({
+      where: { id: deleted.id },
+      data: {
+        deletedAt: null,
+        deletedById: null,
+        key: identifiers.key,
+        slug: identifiers.slug,
+        updatedById: ctx.actorId,
+      },
+    })
+
+    await audit.record(db, ctx, AUDIT_ACTIONS.project.restored, {
+      entityType: 'Project',
+      entityId: project.id,
+      entityLabel: project.name,
+      summary:
+        identifiers.key === deleted.key
+          ? undefined
+          : `Restored as ${identifiers.key} — ${deleted.key} was taken`,
     })
 
     return project
