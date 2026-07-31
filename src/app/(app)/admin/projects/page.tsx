@@ -18,7 +18,14 @@ export default async function AdminProjectsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Projects</h1>
+        <div>
+          {/* Matches the sidebar label, which is "Manage Projects" to tell this
+              apart from the /projects entry in the section above. */}
+          <h1 className="text-3xl font-bold">Manage Projects</h1>
+          <p className="text-muted-foreground">
+            Every project in the organization, including ones you are not a member of.
+          </p>
+        </div>
         <Link href="/admin/projects/new">
           <Button>Create Project</Button>
         </Link>

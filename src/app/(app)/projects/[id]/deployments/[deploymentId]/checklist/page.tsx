@@ -68,13 +68,77 @@ export default async function DeploymentChecklistPage(props: {
 
   return (
     <div className="space-y-8">
+      {/**
+       * The printed sheet is filed with the release, and lands on someone's desk
+       * with none of the app around it — so it has to say what it is, which run,
+       * which environment, and whether the gate had passed when it was printed.
+       */}
+      <section className="print-only-block border-b pb-4">
+        <h1 className="text-xl font-bold">
+          {snapshot.templateName ?? 'Deployment checklist'} — {deployment.reference}
+        </h1>
+        <dl className="mt-2 grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
+          <div>
+            <dt className="inline font-semibold">Project: </dt>
+            <dd className="inline">{deployment.project.name}</dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">Version: </dt>
+            <dd className="inline">{deployment.version}</dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">Environment: </dt>
+            <dd className="inline">
+              {deployment.environmentName}
+              {deployment.isProduction ? ' (production)' : ''}
+            </dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">Status: </dt>
+            <dd className="inline">{deployment.status}</dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">Started: </dt>
+            <dd className="inline">
+              {deployment.startedAt
+                ? `${new Date(deployment.startedAt).toLocaleString()}${
+                    deployment.startedByName ? ` by ${deployment.startedByName}` : ''
+                  }`
+                : 'Not started'}
+            </dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">Completed: </dt>
+            <dd className="inline">
+              {deployment.completedAt
+                ? `${new Date(deployment.completedAt).toLocaleString()}${
+                    deployment.completedByName ? ` by ${deployment.completedByName}` : ''
+                  }`
+                : '—'}
+            </dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">Progress: </dt>
+            <dd className="inline">
+              {checkedItems}/{totalItems} accounted for
+            </dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">Gate: </dt>
+            <dd className="inline">
+              {gate.passes ? 'GO' : `HOLD — ${gate.message}`} ({gate.policy})
+            </dd>
+          </div>
+        </dl>
+      </section>
+
       <div className="space-y-4">
-        <div className="flex items-center gap-4">
+        <div className="no-print flex items-center gap-4">
           <Link href={`/projects/${params.id}/deployments/${params.deploymentId}`}>
             <Button variant="ghost">← Back to Deployment</Button>
           </Link>
         </div>
-        <div>
+        <div className="no-print">
           <p className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">
             {deployment.reference} · {deployment.environmentName} · {deployment.version}
           </p>
@@ -93,10 +157,14 @@ export default async function DeploymentChecklistPage(props: {
         </div>
       </div>
 
-      <DeploymentGauge progress={checkedItems} total={totalItems} />
+      {/* The gauge is a dark gradient SVG — the print header states the same
+          numbers in text, so it does not need to survive onto paper. */}
+      <div className="no-print">
+        <DeploymentGauge progress={checkedItems} total={totalItems} />
+      </div>
 
       {transitions.length > 0 && (
-        <div className="rounded-xl border border-gray-700 bg-gray-900/50 p-6">
+        <div className="no-print rounded-xl border border-gray-700 bg-gray-900/50 p-6">
           <p className="mb-3 font-mono text-xs uppercase tracking-widest text-gray-400">
             Launch control
           </p>
@@ -131,7 +199,7 @@ export default async function DeploymentChecklistPage(props: {
         )}
       </div>
 
-      <div className="flex items-center justify-between border-t border-gray-700 pt-6">
+      <div className="no-print flex items-center justify-between border-t border-gray-700 pt-6">
         <p className="text-sm text-gray-400">
           {sealed
             ? `Sealed — this record is ${deployment.status.toLowerCase()} and no longer editable.`
@@ -141,6 +209,19 @@ export default async function DeploymentChecklistPage(props: {
           <PrintChecklistButton />
         </div>
       </div>
+
+      {/**
+       * A filed sheet has to be attributable to a moment. Rendered on the server,
+       * so it is the time the page was generated rather than the time Print was
+       * pressed — close enough for an artefact, and it avoids a hydration mismatch
+       * from formatting a date on both sides of the boundary.
+       */}
+      <footer className="print-only-block border-t pt-3 text-xs">
+        {deployment.reference} · {deployment.project.name} · {deployment.version} ·{' '}
+        {deployment.environmentName} — printed from {snapshot.templateName ?? 'checklist'}{' '}
+        {snapshot.version ? `v${snapshot.version}` : ''} on{' '}
+        {new Date().toLocaleString('en-GB', { timeZone: ctx.timezone ?? 'UTC' })}
+      </footer>
     </div>
   )
 }

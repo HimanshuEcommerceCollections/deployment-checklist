@@ -221,10 +221,33 @@
    so this is a feature, not a leftover from the reference.
    =========================================================================== */
 
+/**
+ * Shown only on paper.
+ *
+ * Both halves are declared here — hidden by default, revealed inside the print
+ * block — so a caller cannot get it half right by forgetting to also add `hidden`.
+ */
+.print-only,
+.print-only-block {
+  display: none;
+}
+
 @media print {
+  @page {
+    margin: 14mm;
+  }
+
   .no-print,
   .console-scanlines::before {
     display: none !important;
+  }
+
+  .print-only {
+    display: inline !important;
+  }
+
+  .print-only-block {
+    display: block !important;
   }
 
   body {
@@ -233,8 +256,32 @@
     background-image: none !important;
   }
 
-  /* Force every collapsed section open so the printed sheet is complete. */
+  /**
+   * Flatten the app shell.
+   *
+   * `min-h-svh` on a flex column and a sticky header are fine on screen and both
+   * waste a page in print — the header repeats and the viewport height forces
+   * blank space. The chrome itself carries `.no-print`; this is the frame it left
+   * behind.
+   */
+  body * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /**
+   * Force every collapsed section open so the printed sheet is complete.
+   *
+   * `[hidden]` needs naming explicitly: the UA stylesheet sets `display: none` on
+   * it, and the attribute is how the accordion collapses now, so a rule that only
+   * matched the data attribute would lose to it.
+   */
   [data-print-expand],
+  [data-print-expand][hidden],
   [data-state='closed'] > [data-print-expand] {
     display: block !important;
     height: auto !important;
@@ -247,7 +294,35 @@
     border-color: #ccc !important;
   }
 
-  a[href]::after {
+  /**
+   * Dark-theme surfaces print as large blocks of ink that swallow the text on top
+   * of them. The console is deliberately dark on screen; on paper it has to be
+   * legible and cheap to print.
+   */
+  .panel,
+  .panel * {
+    background: transparent !important;
+    background-image: none !important;
+    color: #000 !important;
+  }
+
+  h1,
+  h2,
+  h3 {
+    color: #000 !important;
+  }
+
+  /* Struck-through completed items stay struck, but readable rather than grey-on-white. */
+  .line-through {
+    color: #444 !important;
+  }
+
+  /**
+   * Only annotate real destinations. `href="#"` and in-page anchors add noise to
+   * every line without telling the reader anything.
+   */
+  a[href^='http']::after,
+  a[href^='/']::after {
     content: ' (' attr(href) ')';
     font-size: 0.75em;
     color: #555;

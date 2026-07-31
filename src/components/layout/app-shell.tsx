@@ -25,7 +25,8 @@ export function AppShell({
 }) {
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="bg-panel/80 border-line sticky top-0 z-40 border-b backdrop-blur-sm">
+      {/* Chrome is not part of the artefact — see the print block in globals.css. */}
+      <header className="no-print bg-panel/80 border-line sticky top-0 z-40 border-b backdrop-blur-sm">
         <div className="flex h-14 items-center gap-3 px-4">
           {/* Mobile nav. Below md the sidebar collapses into this sheet. */}
           <Dialog>
@@ -53,7 +54,7 @@ export function AppShell({
       </header>
 
       <div className="flex flex-1">
-        <aside className="border-line hidden w-60 shrink-0 border-r px-3 py-6 md:block">
+        <aside className="no-print border-line hidden w-60 shrink-0 border-r px-3 py-6 md:block">
           <SidebarNav sections={sections} />
         </aside>
 

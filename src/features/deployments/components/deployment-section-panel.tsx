@@ -88,10 +88,17 @@ export function DeploymentSectionPanel({
     }
   }
 
+  const panelId = `section-${deploymentId}-${index}`
+
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900/50 transition hover:bg-gray-900/70">
+    <div
+      data-print-avoid-break
+      className="panel overflow-hidden rounded-lg border border-gray-700 bg-gray-900/50 transition hover:bg-gray-900/70"
+    >
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls={panelId}
         className="flex w-full items-center justify-between px-6 py-4 transition hover:bg-gray-800/50"
       >
         <div className="flex items-center gap-4 text-left">
@@ -116,79 +123,99 @@ export function DeploymentSectionPanel({
           </span>
           <ChevronRight
             size={16}
-            className={`text-gray-500 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+            aria-hidden
+            className={`no-print text-gray-500 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
           />
         </div>
       </button>
 
-      {open && (
-        <div className="border-t border-gray-700">
-          {error && (
-            <div className="border-b border-red-900/50 bg-red-950/40 px-6 py-2 text-xs text-red-300">
-              {error}
-            </div>
-          )}
+      {/**
+       * Rendered whether or not the section is open, and hidden with `hidden`
+       * rather than dropped from the tree.
+       *
+       * This was `{open && …}`. Only section one starts open, so Print produced a
+       * sheet with nine bare headers and no items — and no stylesheet could fix it,
+       * because CSS cannot reveal what was never rendered. `[data-print-expand]` in
+       * the print block had nothing to act on.
+       *
+       * `hidden` keeps the collapsed content out of the accessibility tree and out
+       * of tab order, which is what an accordion should do on screen, while leaving
+       * it in the document for print to force open.
+       */}
+      <div id={panelId} hidden={!open} data-print-expand className="border-t border-gray-700">
+        {error && (
+          <div className="no-print border-b border-red-900/50 bg-red-950/40 px-6 py-2 text-xs text-red-300">
+            {error}
+          </div>
+        )}
 
-          {items.map((item) => {
-            const checked = isChecked(item)
+        {items.map((item) => {
+          const checked = isChecked(item)
 
-            return (
-              <div
-                key={item.id}
-                className="group flex items-start gap-3 border-b border-gray-800 px-6 py-3 transition last:border-b-0 hover:bg-gray-800/30"
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={(event) => handleToggle(item, event.target.checked)}
-                  disabled={readOnly || pendingId === item.id || item.skipped}
-                  aria-label={item.label}
-                  className="mt-0.5 h-5 w-5 cursor-pointer rounded border border-gray-600 bg-gray-800 accent-green-600 checked:border-green-600 checked:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                />
+          return (
+            <div
+              key={item.id}
+              data-print-avoid-break
+              className="group flex items-start gap-3 border-b border-gray-800 px-6 py-3 transition last:border-b-0 hover:bg-gray-800/30"
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={(event) => handleToggle(item, event.target.checked)}
+                disabled={readOnly || pendingId === item.id || item.skipped}
+                aria-label={item.label}
+                className="mt-0.5 h-5 w-5 cursor-pointer rounded border border-gray-600 bg-gray-800 accent-green-600 checked:border-green-600 checked:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+              />
 
-                <div className="flex-1">
-                  <label
-                    className={`select-none text-sm transition ${
-                      checked || item.skipped
-                        ? 'text-gray-500 line-through'
-                        : 'text-gray-200 group-hover:text-white'
-                    }`}
-                  >
-                    {item.label}
-                    {!item.isRequired && (
-                      <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-gray-600">
-                        optional
-                      </span>
-                    )}
-                    {item.skipped && (
-                      <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-amber-600">
-                        skipped
-                      </span>
-                    )}
-                  </label>
+              {/**
+               * A tick box prints as an empty square in most browsers regardless of
+               * its checked state, so the printed sheet needs a mark of its own —
+               * otherwise every item reads as outstanding on paper.
+               */}
+              <span aria-hidden className="print-only mt-0.5 font-mono text-sm">
+                {item.skipped ? '[—]' : checked ? '[x]' : '[ ]'}
+              </span>
 
-                  {item.helpText && <p className="mt-1 text-xs text-gray-500">{item.helpText}</p>}
-                  {item.note && (
-                    <p className="mt-1 text-xs text-gray-400">
-                      <span className="text-gray-600">note:</span> {item.note}
-                    </p>
+              <div className="flex-1">
+                <label
+                  className={`select-none text-sm transition ${
+                    checked || item.skipped
+                      ? 'text-gray-500 line-through'
+                      : 'text-gray-200 group-hover:text-white'
+                  }`}
+                >
+                  {item.label}
+                  {!item.isRequired && (
+                    <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-gray-600">
+                      optional
+                    </span>
                   )}
-
-                  {/* Who ticked it and when — the part that makes this a record. */}
-                  {checked && item.checkedByName && (
-                    <p className="mt-1 font-mono text-[10px] text-gray-600">
-                      {item.checkedByName}
-                      {item.checkedAt
-                        ? ` · ${new Date(item.checkedAt).toLocaleString()}`
-                        : ''}
-                    </p>
+                  {item.skipped && (
+                    <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-amber-600">
+                      skipped
+                    </span>
                   )}
-                </div>
+                </label>
+
+                {item.helpText && <p className="mt-1 text-xs text-gray-500">{item.helpText}</p>}
+                {item.note && (
+                  <p className="mt-1 text-xs text-gray-400">
+                    <span className="text-gray-600">note:</span> {item.note}
+                  </p>
+                )}
+
+                {/* Who ticked it and when — the part that makes this a record. */}
+                {checked && item.checkedByName && (
+                  <p className="mt-1 font-mono text-[10px] text-gray-600">
+                    {item.checkedByName}
+                    {item.checkedAt ? ` · ${new Date(item.checkedAt).toLocaleString()}` : ''}
+                  </p>
+                )}
               </div>
-            )
-          })}
-        </div>
-      )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
