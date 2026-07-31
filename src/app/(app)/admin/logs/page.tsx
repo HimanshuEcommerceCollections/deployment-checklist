@@ -1,5 +1,7 @@
 import { db } from '@/lib/db/prisma'
 import { getRequestContext } from '@/server/context'
+import { PERMISSIONS } from '@/lib/authz/permissions'
+import { requirePermission } from '@/lib/authz/authorize'
 import {
   Table,
   TableBody,
@@ -15,18 +17,16 @@ export const metadata = { title: 'Application Logs' }
 export default async function LogsPage() {
   const ctx = await getRequestContext()
 
+  /// This reads the same collection as /admin/audit and so needs the same
+  /// permission. Without it, any signed-in account could read the whole
+  /// organization's audit trail from here.
+  requirePermission(ctx, PERMISSIONS.audit.read)
+
   const logs = await db.auditLog.findMany({
     where: { organizationId: ctx.organizationId },
     orderBy: { createdAt: 'desc' },
     take: 100,
   })
-
-  const levelColor: Record<string, string> = {
-    error: 'bg-red-100 text-red-800',
-    warning: 'bg-yellow-100 text-yellow-800',
-    info: 'bg-blue-100 text-blue-800',
-    debug: 'bg-gray-100 text-gray-800',
-  }
 
   return (
     <div className="space-y-6">

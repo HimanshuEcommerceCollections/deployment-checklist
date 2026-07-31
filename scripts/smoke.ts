@@ -170,6 +170,61 @@ async function main() {
   // Proves navigation is generated from permissions.
   check('admin navigation rendered', dashboardHtml.includes('Administration'))
 
+  // ── Environment editing ──────────────────────────────────────────────────
+  // The list page has always linked to /admin/environments/<id>; until the route
+  // existed every Edit button was a 404. Both halves are checked so a future
+  // catch-all cannot make the 404 case pass by accident.
+  const environment = await db.environment.findFirstOrThrow({ where: { deletedAt: null } })
+
+  const envEdit = await fetch(`${BASE}/admin/environments/${environment.id}`, {
+    headers: { cookie: jar.header() },
+    redirect: 'manual',
+  })
+  const envEditHtml = envEdit.status === 200 ? await envEdit.text() : ''
+  check(
+    'GET /admin/environments/<id> → 200',
+    envEdit.status === 200,
+    `got ${envEdit.status}`,
+  )
+  check('environment edit form is populated', envEditHtml.includes(environment.key))
+
+  const envMissing = await fetch(`${BASE}/admin/environments/ffffffffffffffffffffffff`, {
+    headers: { cookie: jar.header() },
+    redirect: 'manual',
+  })
+  check(
+    'unknown environment id → 404',
+    envMissing.status === 404,
+    `got ${envMissing.status}`,
+  )
+
+  // ── Trash renders real soft-deleted rows ─────────────────────────────────
+  // Soft-delete a project underneath the page rather than trusting an empty
+  // "Trash is empty" render, which would pass whether or not the query works.
+  const admin = await db.user.findFirstOrThrow({ where: { email: EMAIL } })
+  const trashProject = await db.project.findFirstOrThrow({ where: { deletedAt: null } })
+  await db.project.update({
+    where: { id: trashProject.id },
+    data: { deletedAt: new Date(), deletedById: admin.id },
+  })
+
+  try {
+    const trash = await fetch(`${BASE}/admin/trash`, {
+      headers: { cookie: jar.header() },
+      redirect: 'manual',
+    })
+    const trashHtml = trash.status === 200 ? await trash.text() : ''
+    check('GET /admin/trash → 200', trash.status === 200, `got ${trash.status}`)
+    check('trash lists the deleted project', trashHtml.includes(trashProject.name))
+    check('trash offers a restore action', trashHtml.includes('Restore'))
+  } finally {
+    // Put it back regardless — the seeded projects are shared with every other check.
+    await db.project.update({
+      where: { id: trashProject.id },
+      data: { deletedAt: null, deletedById: null },
+    })
+  }
+
   // ── Session verification is DB-backed, not just JWT ───────────────────────
   // Bumping sessionEpoch must invalidate the existing token immediately. This is
   // the mechanism that makes suspension and password change take effect at once.

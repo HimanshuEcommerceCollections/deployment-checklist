@@ -75,18 +75,37 @@ depends on them. Three ways to get one:
 | `npm run doctor` | pre-flight check: env, connectivity, transactions, seed, invariants, admin |
 | `npm run smoke` | end-to-end HTTP check against a running dev server |
 | | ⚠️ don't run `build` while `dev` is running — both write `.next`, and the dev server starts 500ing until it recompiles |
-| `npm test` | 51 unit + integration tests |
+| `npm test` | 103 unit + integration tests |
 | `npm run typecheck` · `npm run lint` | strict TS, plus the architectural lint rules |
 | `npm run build` | production build |
 | `npm run db:push` · `db:seed` · `db:migrate-data` · `db:studio` | database |
 | `npm run grant:admin -- <email>` | recover a locked-out super-admin |
 
+### Integration tests want their own database
+
+`tests/integration/**` writes real rows, and audit rows are append-only — so pointing them
+at a shared or deployed database permanently adds entries to a trail somebody reads. Give
+them a separate one in **`.env.test`** (gitignored):
+
+```ini
+DATABASE_URL="mongodb://127.0.0.1:27017/deployment_checklist_test?replicaSet=rs0&directConnection=true"
+```
+
+`tests/setup.ts` loads `.env.test` **before** `.env`, and `process.loadEnvFile` does not
+overwrite a variable that is already set — so this wins and `.env` supplies everything
+else. Seed it once with `db push` → `db:migrate-data` → `db:seed` against that URL.
+
+> On Windows, `npm run build` and `npm run setup` fail with *"The token '&&' is not a valid
+> statement separator"* — npm runs scripts through PowerShell 5.1, which has no `&&`. Run
+> the steps individually, or use Git Bash.
+
 ---
 
 ## What is built
 
-**Phase 0 — Foundation** and **Phase 1 — Identity** are complete and verified.
-Build order and remaining phases: [ARCHITECTURE.md](ARCHITECTURE.md#suggested-build-order).
+**Phase 0 — Foundation**, **Phase 1 — Identity** and **Phase 2 — Projects & environments**
+are complete and verified. Build order and remaining phases:
+[ARCHITECTURE.md](ARCHITECTURE.md#suggested-build-order).
 
 <table>
 <tr><td>
@@ -103,14 +122,16 @@ Build order and remaining phases: [ARCHITECTURE.md](ARCHITECTURE.md#suggested-bu
 - Notification outbox with retries and backoff
 - Email provider abstraction
 - Tailwind v4 theme from the reference design, dark + light
+- Projects and environments CRUD, memberships
+- Soft delete **and restore**, through a working trash
 
 </td><td valign="top">
 
 **Verified**
 
 - 0 TypeScript errors, 0 lint errors
-- 51 tests passing
-- 18/18 end-to-end smoke checks
+- 103 tests passing
+- 24/24 end-to-end smoke checks
 - Production build clean
 - Seed is idempotent
 - Reference HTML's 10 sections / 49 items seeded as `Production Deployment v1`
@@ -118,9 +139,24 @@ Build order and remaining phases: [ARCHITECTURE.md](ARCHITECTURE.md#suggested-bu
 </td></tr>
 </table>
 
-**Not built yet** (by design — see the build order): projects/templates/deployments CRUD,
-the deployment console, comments, history, dashboard metrics, admin panel.
-The dashboard is a placeholder that deliberately does **not** fake its stat tiles.
+**Partly built, ahead of the build order:** the template version editor, deployment
+creation with a checklist snapshot, and the console that ticks items. Phases 3 and 4 own
+finishing them.
+
+**Not built yet** (by design — see the build order): comments, history grid, dashboard
+metrics, global search. The dashboard is a placeholder that deliberately does **not** fake
+its stat tiles, and `/search` returns mock rows until Phase 6 gives it an index.
+
+### Deleting is never destroying
+
+Everything tenant-scoped soft-deletes, and `/admin/trash` restores it. Two things that
+follow from the schema and are easy to get wrong:
+
+- **A deleted row keeps its unique key.** `@@unique([organizationId, key])` does not
+  exclude soft-deleted rows, so identifier probes must see deleted rows or `create` dies
+  on the index. Restore therefore always gets its original key back.
+- **Restoring a user returns them DEACTIVATED**, never straight to ACTIVE. Their password
+  state is unknown at that point; an admin reactivates deliberately.
 
 ---
 

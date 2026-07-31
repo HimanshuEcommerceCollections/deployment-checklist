@@ -13,7 +13,6 @@ export function DeploymentGauge({ progress, total }: DeploymentGaugeProps) {
   const isGo = percentage === 100
   const color = isGo ? '#35d68f' : percentage > 60 ? '#f0b54c' : '#ef5f6b'
   const status = isGo ? 'GO' : 'HOLD'
-  const statusClass = isGo ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
 
   return (
     <div className="flex items-center gap-8 bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-6 border border-gray-700">

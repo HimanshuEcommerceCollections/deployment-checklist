@@ -229,14 +229,16 @@ Ordered by cost of getting them wrong. Detail in [docs/13](docs/13-recommendatio
 ## Suggested build order
 
 Each phase ships something demonstrable and leaves the system deployable.
-**Phases 0 and 1 are complete and verified** — 51 tests, 18/18 end-to-end smoke checks, clean
-build. See [README](README.md) to run it.
+**Phases 0–2 are complete and verified** — 103 tests, 24/24 end-to-end smoke checks, clean
+build. Phases 3 and 4 are partly built ahead of order: the template version editor and a
+working checklist console exist, but neither phase has been closed out. See
+[README](README.md) to run it.
 
 | Phase | Scope | Why here |
 |---|---|---|
 | **0. Foundation** ✅ | repo, env validation, Prisma + replica set, Tailwind v4 theme from the HTML, shadcn, CI, seed | nothing works without it |
 | **1. Identity** ✅ | Auth.js credentials, invite → accept → password, reset, permission catalog + guard, audit core | every later feature calls `can()` and `audit()` |
-| **2. Projects & environments** | CRUD, soft delete + restore, memberships | deployments need a project |
+| **2. Projects & environments** ✅ | CRUD, soft delete + restore, memberships | deployments need a project |
 | **3. Templates** | template + versions, embedded section/item editor, reorder, duplicate, publish, version diff | deployments need a template to snapshot |
 | **4. The console** | run creation with snapshot, `ChecklistItemState`, optimistic toggles, gauge, readiness gate, state machine | the actual product; the HTML made real |
 | **5. Collaboration** | comments (markdown), deployment timeline from audit | fits the run detail page already built |
