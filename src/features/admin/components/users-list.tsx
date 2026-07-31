@@ -1,6 +1,7 @@
-'use client'
+import Link from 'next/link'
 
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Table,
   TableBody,
@@ -17,24 +18,31 @@ interface User {
   name: string
   status: UserStatus
   createdAt: Date
+  roleIds: string[]
 }
 
 interface UsersListProps {
   users: User[]
+  /** id → display name, so the table shows roles rather than ObjectIds. */
+  roleNames: Record<string, string>
 }
 
 const statusColors: Record<UserStatus, string> = {
-  ACTIVE: 'bg-green-100 text-green-800',
-  INVITED: 'bg-blue-100 text-blue-800',
-  SUSPENDED: 'bg-yellow-100 text-yellow-800',
-  DEACTIVATED: 'bg-gray-100 text-gray-800',
+  ACTIVE: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
+  INVITED: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
+  SUSPENDED: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300',
+  DEACTIVATED: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
 }
 
-export function UsersList({ users }: UsersListProps) {
+/**
+ * No longer a client component: every row links to the detail page, which owns the
+ * writes, so there is no client state left here.
+ */
+export function UsersList({ users, roleNames }: UsersListProps) {
   if (users.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center">
-        <p className="text-gray-600">No users yet. Invite someone to get started.</p>
+        <p className="text-muted-foreground">No users yet. Invite someone to get started.</p>
       </div>
     )
   }
@@ -46,25 +54,39 @@ export function UsersList({ users }: UsersListProps) {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Email</TableHead>
+            <TableHead>Roles</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Joined</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {users.map((user) => (
-            <TableRow key={user.id}>
-              <TableCell className="font-medium">{user.name}</TableCell>
-              <TableCell>{user.email}</TableCell>
-              <TableCell>
-                <Badge className={statusColors[user.status]}>
-                  {user.status}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-sm text-gray-600">
-                {new Date(user.createdAt).toLocaleDateString()}
-              </TableCell>
-            </TableRow>
-          ))}
+          {users.map((user) => {
+            const roles = user.roleIds.map((id) => roleNames[id]).filter(Boolean)
+
+            return (
+              <TableRow key={user.id}>
+                <TableCell className="font-medium">{user.name}</TableCell>
+                <TableCell className="font-mono text-sm">{user.email}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {roles.length > 0 ? roles.join(', ') : '—'}
+                </TableCell>
+                <TableCell>
+                  <Badge className={statusColors[user.status]}>{user.status}</Badge>
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {new Date(user.createdAt).toLocaleDateString()}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Link href={`/admin/users/${user.id}`}>
+                    <Button variant="ghost" size="sm">
+                      {user.status === 'INVITED' ? 'Manage invite' : 'Manage'}
+                    </Button>
+                  </Link>
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
     </div>

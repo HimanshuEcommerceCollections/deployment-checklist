@@ -16,6 +16,24 @@ export class RolesService {
     })
   }
 
+  /**
+   * id → name, for anywhere that only needs to label a role.
+   *
+   * `listRoles` returns whole rows, and everything a server component awaits ends
+   * up in the RSC flight payload — so using it just to resolve names shipped every
+   * role's full permission array to the browser, including the admin role's `["*"]`.
+   * Harmless behind `admin.access`, and still no reason to send it.
+   */
+  async roleNames(ctx: RequestContext) {
+    const roles = await db.role.findMany({
+      where: { organizationId: ctx.organizationId, deletedAt: null },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    })
+
+    return Object.fromEntries(roles.map((role) => [role.id, role.name]))
+  }
+
   async getRole(ctx: RequestContext, id: string) {
     return db.role.findFirstOrThrow({
       where: { id, organizationId: ctx.organizationId, deletedAt: null },
