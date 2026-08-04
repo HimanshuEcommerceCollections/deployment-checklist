@@ -121,8 +121,9 @@ GET /accept-invite/[token]                       (RSC, no session required)
 
 POST acceptInvite (Server Action)
   ├─ re-validate the token   ← never trust the GET; the form could be replayed
-  ├─ Zod: password policy from Setting (length, mixed case/number/symbol)
-  ├─ reject the 10k most common passwords (zxcvbn score ≥ 3)
+  ├─ password policy from Setting: minimum length only (8 by default)
+  │    Composition, blocklist, sequence and name/email checks were all removed —
+  │    see src/lib/auth/password-policy.ts for the trade-off. zxcvbn is not used.
   ├─ $transaction:
   │    1. User.update  { name, passwordHash: argon2id(pw), status: ACTIVE,
   │                      passwordChangedAt: now, sessionEpoch: { increment: 1 } }
@@ -214,7 +215,7 @@ POST /forgot-password
 GET /reset-password/[token]   → validate (hash, unconsumed, unexpired) → render form
 POST resetPassword
   ├─ re-validate the token
-  ├─ Zod password policy + zxcvbn
+  ├─ password policy from Setting: minimum length only
   ├─ reject if identical to the current hash ("choose a different password")
   └─ $transaction:
        1. AuthToken.update { consumedAt: now }              ← single use

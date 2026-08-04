@@ -179,8 +179,13 @@ export function SettingsForm({ settings }: SettingsFormProps) {
               defaultChecked={settings.passwordRequireMixed}
               disabled={pending}
             />
-            <span className="text-sm">Require mixed case passwords</span>
+            <span className="text-sm">Also require mixed case and a number</span>
           </label>
+          {/* Length is the only rule unless this is on — worth saying, since the
+              default changed and an admin may remember the stricter behaviour. */}
+          <p className="mt-1 text-xs text-muted-foreground">
+            Off by default. With it off, minimum length is the only password rule.
+          </p>
         </div>
       </fieldset>
 
