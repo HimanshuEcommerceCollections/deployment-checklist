@@ -17,6 +17,13 @@ export interface AssignableRole {
   /** Project-scoped roles are granted through a membership, not here. */
   isAssignableGlobally: boolean
   isSuperAdmin: boolean
+  /**
+   * True when granting this role organization-wide makes every project visible.
+   *
+   * `projectScopeFor` short-circuits on a global grant, so this is the difference
+   * between "assign them three projects" working and being decoration.
+   */
+  grantsAllProjects: boolean
 }
 
 interface UserFormProps {
@@ -159,15 +166,27 @@ export function UserForm({ user, roles, isSelf }: UserFormProps) {
                       full access
                     </span>
                   )}
+                  {!role.isSuperAdmin && role.grantsAllProjects && (
+                    <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-300">
+                      all projects
+                    </span>
+                  )}
                   <span className="ml-2 font-mono text-xs text-muted-foreground">{role.key}</span>
                 </span>
               </label>
             ))}
           </div>
         )}
+        {assignable.some((role) => role.grantsAllProjects || role.isSuperAdmin) && (
+          <p className="text-xs text-muted-foreground">
+            A role marked <strong>all projects</strong> grants access to every project in the
+            organization. To limit someone to specific projects, leave those unticked and use
+            Project access below instead.
+          </p>
+        )}
         {roles.length !== assignable.length && (
           <p className="text-xs text-muted-foreground">
-            Project-scoped roles are not listed — grant those on the project&apos;s members page.
+            Project-only roles are not listed here — grant those under Project access.
           </p>
         )}
       </fieldset>

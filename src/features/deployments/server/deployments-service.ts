@@ -13,7 +13,13 @@ import {
 import { PreconditionFailedError } from '@/domain/shared/errors'
 import { type AuditAction, AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
-import { type RequestContext, can, projectFilter, requirePermission } from '@/lib/authz/authorize'
+import {
+  type RequestContext,
+  can,
+  projectFilter,
+  requireAnyProject,
+  requirePermission,
+} from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { env } from '@/lib/config/env'
 import { db } from '@/lib/db/prisma'
@@ -71,7 +77,9 @@ function visibleProject(ctx: RequestContext, permission: string) {
 
 export class DeploymentsService {
   async listProjectDeployments(ctx: RequestContext, projectId: string) {
-    requirePermission(ctx, PERMISSIONS.deployment.read)
+    /// The project is named, so check it exactly — an unscoped check would reject
+    /// anyone whose access to it came from a project assignment.
+    requirePermission(ctx, PERMISSIONS.deployment.read, { projectId })
 
     return db.deploymentRun.findMany({
       where: {
@@ -88,7 +96,10 @@ export class DeploymentsService {
   }
 
   async getDeployment(ctx: RequestContext, id: string) {
-    requirePermission(ctx, PERMISSIONS.deployment.read)
+    /// Which project this run belongs to is not known until it is read, so the
+    /// coarse gate goes here and `visibleProject` below does the exact scoping —
+    /// an id outside their projects then misses, which is the right 404.
+    requireAnyProject(ctx, PERMISSIONS.deployment.read)
 
     return db.deploymentRun.findFirstOrThrow({
       where: {
@@ -248,7 +259,9 @@ export class DeploymentsService {
     itemId: string,
     input: UpdateDeploymentItemInput,
   ) {
-    requirePermission(ctx, PERMISSIONS.deployment.execute)
+    /// Coarse: the run's project is not known until it is read. The query below
+    /// carries the precise check.
+    requireAnyProject(ctx, PERMISSIONS.deployment.execute)
 
     // Scoped by deployment AND project visibility so an id from a project the
     // caller cannot execute in is still a miss.
@@ -649,7 +662,8 @@ export class DeploymentsService {
   }
 
   async addComment(ctx: RequestContext, deploymentId: string, input: CreateCommentInput) {
-    requirePermission(ctx, PERMISSIONS.comment.create)
+    /// Coarse for the same reason as getDeployment; visibleProject scopes it.
+    requireAnyProject(ctx, PERMISSIONS.comment.create)
 
     const deployment = await db.deploymentRun.findFirstOrThrow({
       where: {

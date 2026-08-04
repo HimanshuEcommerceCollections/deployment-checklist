@@ -1,6 +1,11 @@
 import 'server-only'
 
-import { type RequestContext, projectFilter, requirePermission } from '@/lib/authz/authorize'
+import {
+  type RequestContext,
+  projectFilter,
+  requireAnyProject,
+  requirePermission,
+} from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { db } from '@/lib/db/prisma'
 
@@ -24,7 +29,9 @@ import { db } from '@/lib/db/prisma'
  */
 export class ProjectsService {
   async listUserProjects(ctx: RequestContext) {
-    requirePermission(ctx, PERMISSIONS.project.read)
+    /// "Anywhere", not "organization-wide" — the filter below is what narrows this
+    /// to the projects they actually hold. See requireAnyProject.
+    requireAnyProject(ctx, PERMISSIONS.project.read)
 
     return db.project.findMany({
       where: {
@@ -40,7 +47,8 @@ export class ProjectsService {
   }
 
   async getProject(ctx: RequestContext, id: string) {
-    requirePermission(ctx, PERMISSIONS.project.read)
+    /// A specific project, so the check can be exact rather than coarse.
+    requirePermission(ctx, PERMISSIONS.project.read, { projectId: id })
 
     return db.project.findFirstOrThrow({
       where: {

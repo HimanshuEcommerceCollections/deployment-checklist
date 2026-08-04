@@ -2,15 +2,24 @@
 
 import { revalidatePath } from 'next/cache'
 
+import { type ActionResult, ok, toActionResult } from '@/lib/http/action-result'
 import { getRequestContext } from '@/server/context'
-import { membersService } from '../server/members-service'
-import { AddMemberSchema, UpdateMemberSchema } from '../schemas/members.schema'
 
-function fail(error: unknown, fallback: string) {
-  return {
-    ok: false as const,
-    message: error instanceof Error && error.message ? error.message : fallback,
-  }
+import { AddMemberSchema, UpdateMemberSchema } from '../schemas/members.schema'
+import { membersService } from '../server/members-service'
+
+/**
+ * A membership change alters what the affected user can see, not just this page.
+ *
+ * Permissions resolve per request from Membership, so the change is live on their
+ * next navigation — but the assigning admin's own cached routes still need
+ * clearing, and `/projects` is the list whose contents just changed for someone.
+ */
+function revalidateAccess(projectId: string, userId?: string) {
+  revalidatePath(`/projects/${projectId}/members`)
+  revalidatePath('/projects')
+  revalidatePath('/admin/projects')
+  if (userId) revalidatePath(`/admin/users/${userId}`)
 }
 
 export async function listProjectMembers(projectId: string) {
@@ -18,37 +27,47 @@ export async function listProjectMembers(projectId: string) {
   return membersService.listProjectMembers(ctx, projectId)
 }
 
-export async function addProjectMember(projectId: string, input: unknown) {
+export async function addProjectMember(
+  projectId: string,
+  input: unknown,
+): Promise<ActionResult<undefined>> {
   try {
     const ctx = await getRequestContext()
     const parsed = AddMemberSchema.parse(input)
-    const data = await membersService.addMember(ctx, projectId, parsed)
-    revalidatePath(`/projects/${projectId}/members`)
-    return { ok: true as const, message: 'Member added', data }
+    await membersService.addMember(ctx, projectId, parsed)
+    revalidateAccess(projectId, parsed.userId)
+    return ok()
   } catch (error) {
-    return fail(error, 'Could not add member')
+    return toActionResult(error, { action: 'addProjectMember' })
   }
 }
 
-export async function updateProjectMember(projectId: string, userId: string, input: unknown) {
+export async function updateProjectMember(
+  projectId: string,
+  userId: string,
+  input: unknown,
+): Promise<ActionResult<undefined>> {
   try {
     const ctx = await getRequestContext()
     const parsed = UpdateMemberSchema.parse(input)
-    const data = await membersService.updateMemberRoles(ctx, projectId, userId, parsed)
-    revalidatePath(`/projects/${projectId}/members`)
-    return { ok: true as const, message: 'Member updated', data }
+    await membersService.updateMemberRoles(ctx, projectId, userId, parsed)
+    revalidateAccess(projectId, userId)
+    return ok()
   } catch (error) {
-    return fail(error, 'Could not update member')
+    return toActionResult(error, { action: 'updateProjectMember' })
   }
 }
 
-export async function removeProjectMember(projectId: string, userId: string) {
+export async function removeProjectMember(
+  projectId: string,
+  userId: string,
+): Promise<ActionResult<undefined>> {
   try {
     const ctx = await getRequestContext()
     await membersService.removeMember(ctx, projectId, userId)
-    revalidatePath(`/projects/${projectId}/members`)
-    return { ok: true as const, message: 'Member removed' }
+    revalidateAccess(projectId, userId)
+    return ok()
   } catch (error) {
-    return fail(error, 'Could not remove member')
+    return toActionResult(error, { action: 'removeProjectMember' })
   }
 }

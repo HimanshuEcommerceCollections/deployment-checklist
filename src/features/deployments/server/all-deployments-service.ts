@@ -1,12 +1,13 @@
 import 'server-only'
 
-import { type RequestContext, projectFilter, requirePermission } from '@/lib/authz/authorize'
+import { type RequestContext, projectFilter, requireAnyProject } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { db } from '@/lib/db/prisma'
 
 export class AllDeploymentsService {
   async listUserDeployments(ctx: RequestContext) {
-    requirePermission(ctx, PERMISSIONS.deployment.read)
+    /// Cross-project list: the gate is "anywhere", the filter below narrows it.
+    requireAnyProject(ctx, PERMISSIONS.deployment.read)
 
     return db.deploymentRun.findMany({
       where: {

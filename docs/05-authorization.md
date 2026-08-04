@@ -48,6 +48,22 @@ Effective on Website  = Developer ∪ QA
 Effective on Elevate  = Developer
 ```
 
+> **Guard the list, then filter it — and pick the right guard.**
+>
+> `requirePermission` with **no scope** consults only the global set. Putting it above
+> a `projectFilter` rejects exactly the users project grants exist for, before the
+> filter can return the rows they are entitled to. Seven services shipped with this
+> bug and it is why project scoping looked unused rather than broken —
+> [docs/14 §14.7](14-rbac-redesign.md#147-reversal-project-assignment-is-the-access-mechanism).
+>
+> - Cross-project list → `requireAnyProject(ctx, permission)` + `projectFilter` in the query
+> - The caller named a project → `requirePermission(ctx, permission, { projectId })`
+> - Entity whose project is unknown until read → `requireAnyProject` as a coarse gate,
+>   and let the scoped query miss
+>
+> Never `requireAnyProject` alone to protect a single entity: it answers "anywhere",
+> not "here".
+
 Resolution order in `can()`:
 
 ```

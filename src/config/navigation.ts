@@ -13,7 +13,7 @@ import {
   UsersIcon,
 } from 'lucide-react'
 
-import { type RequestContext, can } from '@/lib/authz/authorize'
+import { type RequestContext, can, canOnAnyProject } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 
 /**
@@ -29,6 +29,16 @@ export interface NavItem {
   icon: LucideIcon
   /** Omit for items everyone signed in may see. */
   permission?: string
+  /**
+   * Resolve the permission across projects rather than organization-wide.
+   *
+   * `can()` with no scope only consults the global grant set, so a user whose
+   * `project.read` comes from a project assignment resolves to false and loses the
+   * link to the very projects they were assigned. `canOnAnyProject` answers "do
+   * they hold this anywhere", which is the right question for a list route that
+   * then narrows its own rows through `projectFilter`.
+   */
+  anyProject?: boolean
   /** Matches child routes too, so /projects/apex highlights "Projects". */
   matchPrefix?: boolean
 }
@@ -46,6 +56,7 @@ const MAIN: NavSection = {
       href: '/deployments',
       icon: HistoryIcon,
       permission: PERMISSIONS.deployment.read,
+      anyProject: true,
       matchPrefix: true,
     },
     {
@@ -53,6 +64,7 @@ const MAIN: NavSection = {
       href: '/projects',
       icon: FolderKanbanIcon,
       permission: PERMISSIONS.project.read,
+      anyProject: true,
       matchPrefix: true,
     },
   ],
@@ -76,13 +88,23 @@ const ADMIN: NavSection = {
 }
 
 /** Sections the actor may actually use. Empty sections are dropped entirely. */
+/** One rule, so a nav item and its route can never disagree about who may see it. */
+function allowed(ctx: RequestContext, item: NavItem): boolean {
+  if (!item.permission) return true
+  return item.anyProject
+    ? canOnAnyProject(ctx, item.permission)
+    : can(ctx, item.permission)
+}
+
 export function visibleNavigation(ctx: RequestContext): NavSection[] {
   const sections: NavSection[] = []
 
-  const main = MAIN.items.filter((item) => !item.permission || can(ctx, item.permission))
+  const main = MAIN.items.filter((item) => allowed(ctx, item))
   if (main.length > 0) sections.push({ items: main })
 
   // One gate for the whole admin tree, matching the (admin) layout guard.
+  // Deliberately NOT anyProject: administration is organization-wide by nature, so
+  // a project grant must never light up an admin link.
   if (can(ctx, PERMISSIONS.admin.access)) {
     const admin = ADMIN.items.filter((item) => !item.permission || can(ctx, item.permission))
     if (admin.length > 0) sections.push({ label: ADMIN.label, items: admin })

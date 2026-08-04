@@ -197,6 +197,24 @@ export function requirePermission(
   if (!can(ctx, permission, scope)) throw new ForbiddenError(permission, scope)
 }
 
+/**
+ * Throwing form of `canOnAnyProject`, for a read that is about to narrow itself.
+ *
+ * The gate a list method needs is "do they hold this anywhere", not "do they hold
+ * it organization-wide". `requirePermission` with no scope only consults the global
+ * grant set, so it rejects a user whose access comes from a project assignment —
+ * before `projectFilter` on the next line gets the chance to return exactly the
+ * rows they are entitled to.
+ *
+ * That combination is what kept project-scoped access dormant: the filter was
+ * correct all along and the guard above it refused everyone it was written for.
+ * Pair this coarse check with `projectFilter` in the query, which does the precise
+ * scoping — never use it on its own to protect a single entity.
+ */
+export function requireAnyProject(ctx: RequestContext, permission: Permission | string): void {
+  if (!canOnAnyProject(ctx, permission)) throw new ForbiddenError(permission, {})
+}
+
 /** Require every listed permission. */
 export function requireAll(
   ctx: RequestContext,

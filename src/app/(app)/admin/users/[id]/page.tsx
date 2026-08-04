@@ -7,8 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DeleteUserButton } from '@/features/admin/components/delete-user-button'
 import { UserForm } from '@/features/admin/components/user-form'
 import { UserInvitationPanel } from '@/features/admin/components/user-invitation-panel'
+import { UserProjectAccess } from '@/features/admin/components/user-project-access'
 import { rolesService } from '@/features/admin/server/roles-service'
 import { usersService } from '@/features/admin/server/users-service'
+import { membersService } from '@/features/projects/server/members-service'
+import { projectsService } from '@/features/projects/server/projects-service'
 import { requirePermission } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { getRequestContext } from '@/server/context'
@@ -32,11 +35,34 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
   const user = await usersService.getUser(ctx, id).catch(() => null)
   if (!user) notFound()
 
-  const roles = await rolesService.listRoles(ctx)
-  const isSelf = user.id === ctx.actorId
+  const [roles, granted, allProjects, projectRoles] = await Promise.all([
+    rolesService.listRoles(ctx),
+    membersService.listUserProjects(ctx, user.id),
+    projectsService.listUserProjects(ctx),
+    membersService.listAssignableRoles(ctx).catch(() => []),
+  ])
 
+  const isSelf = user.id === ctx.actorId
   const held = roles.filter((role) => user.roleIds.includes(role.id))
   const locked = user.lockedUntil && user.lockedUntil > new Date()
+
+  /**
+   * Whether any organization-wide role they hold already grants project access.
+   *
+   * This is the check that decides whether assigning projects restricts anything
+   * at all: `projectScopeFor` short-circuits on a global grant and returns "every
+   * project", so a user with `project.read` org-wide sees everything and their
+   * assignments are decoration. The UI says so rather than letting an
+   * administrator assign three projects and wonder why all four are visible.
+   */
+  const seesAllProjects = held.some(
+    (role) => role.isSuperAdmin || role.permissions.includes(PERMISSIONS.project.read),
+  )
+
+  const assignedProjectIds = new Set(granted.map((entry) => entry.project.id))
+  const availableProjects = allProjects
+    .filter((project) => !assignedProjectIds.has(project.id))
+    .map((project) => ({ id: project.id, name: project.name, key: project.key }))
 
   return (
     <div className="space-y-6">
@@ -76,6 +102,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
                 key: role.key,
                 isAssignableGlobally: role.isAssignableGlobally,
                 isSuperAdmin: role.isSuperAdmin,
+                grantsAllProjects: role.permissions.includes(PERMISSIONS.project.read),
               }))}
               isSelf={isSelf}
             />
@@ -127,6 +154,22 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Project access</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <UserProjectAccess
+            userId={user.id}
+            userName={user.name}
+            granted={granted}
+            available={availableProjects}
+            roles={projectRoles}
+            seesAllProjects={seesAllProjects}
+          />
+        </CardContent>
+      </Card>
 
       {user.invitation && (
         <Card>
