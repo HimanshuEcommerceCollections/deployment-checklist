@@ -175,7 +175,7 @@ describe('invite → accept', () => {
     expect(memberships[0]!.projectId).toBe(project.id)
   })
 
-  it('rejects a weak password against the org policy', async () => {
+  it('rejects a password that is too short for the org policy', async () => {
     const { invitation } = await invitationService.invite(adminCtx, {
       email: INVITEE,
       roleIds: [engineerRoleId],
@@ -183,9 +183,16 @@ describe('invite → accept', () => {
     })
     const token = await tokenFromOutbox(invitation.id)
 
+    /**
+     * `'short'`, where this used to use `'password'`.
+     *
+     * The policy is now minimum length and nothing else, so `'password'` is a
+     * valid eight-character password and no longer tests anything. Length is the
+     * only rule left to violate. See src/lib/auth/password-policy.ts.
+     */
     await expect(
       invitationService.accept(
-        { token, name: 'Weak', password: 'password', confirmPassword: 'password' },
+        { token, name: 'Weak', password: 'short', confirmPassword: 'short' },
         {},
       ),
     ).rejects.toThrow()

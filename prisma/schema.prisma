@@ -167,8 +167,10 @@ model Setting {
   sessionAbsoluteHours   Int     @default(720)
   inviteExpiryHours      Int     @default(72)
   passwordResetTtlMinute Int     @default(30)
-  passwordMinLength      Int     @default(12)
-  passwordRequireMixed   Boolean @default(true)
+  /// Length is the only password rule by default. See
+  /// src/lib/auth/password-policy.ts for what was removed and why.
+  passwordMinLength      Int     @default(8)
+  passwordRequireMixed   Boolean @default(false)
   maxFailedLogins        Int     @default(10)
   lockoutMinutes         Int     @default(15)
   enforceMfa             Boolean @default(false) // reserved

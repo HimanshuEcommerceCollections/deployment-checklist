@@ -1,9 +1,28 @@
 /**
  * Password policy.
  *
- * Length plus a blocklist, not composition rules. Mandatory-symbol policies
- * reliably produce `Password1!` at scale, which is in every wordlist — length
- * and rejecting known-common passwords buys far more real resistance.
+ * Length, and nothing else by default.
+ *
+ * This used to also require mixed case and a digit, reject a blocklist of common
+ * passwords, refuse repeated characters and keyboard runs, and refuse anything
+ * containing the user's own name or email local-part. Together those made setting
+ * a password hard enough that people picked something they could not remember,
+ * which pushes them towards writing it down or reusing one — so the policy was
+ * relaxed deliberately, on request, to a single minimum-length rule.
+ *
+ * What that trades away, stated plainly so nobody has to rediscover it: `password`
+ * and `12345678` are now accepted. The compensating controls already in place are
+ * invite-only registration, Argon2id hashing, per-account and per-IP rate limits,
+ * account lockout after repeated failures, and instant session revocation via
+ * `sessionEpoch`. Those bound how fast an attacker can test guesses; they do not
+ * make a guessable password safe. If this system is ever exposed beyond an
+ * invited team, reinstating at least the blocklist is the cheapest thing to do —
+ * it costs a user nothing, because nobody is inconvenienced by being told not to
+ * use "password123".
+ *
+ * `requireMixed` remains as an admin toggle and is still honoured, defaulted OFF.
+ * It is the one former rule that stayed configurable rather than being deleted, so
+ * an organization can opt back in without a deploy.
  *
  * Pure (no server-only import) so the same rules run in the browser for live
  * feedback and on the server for enforcement. The server is still the authority.
@@ -11,27 +30,11 @@
 
 export interface PasswordPolicy {
   minLength: number
+  /** Opt-in: require both cases and a digit. Off by default. */
   requireMixed: boolean
 }
 
-export const DEFAULT_POLICY: PasswordPolicy = { minLength: 12, requireMixed: true }
-
-/**
- * Passwords refused regardless of length.
- *
- * A deliberately short list covering what people actually pick for an internal
- * tool. A full 10k-entry list belongs in a dedicated package if this ever faces
- * the public internet; for an invite-only system the marginal value is low and
- * the bundle cost is not.
- */
-const BLOCKLIST = new Set([
-  'password', 'password1', 'password123', 'passw0rd', 'p@ssw0rd', 'p@ssword',
-  'qwerty', 'qwerty123', 'letmein', 'welcome', 'welcome1', 'admin', 'admin123',
-  'changeme', 'iloveyou', 'monkey', 'dragon', 'sunshine', 'princess',
-  '12345678', '123456789', '1234567890', '11111111', '00000000',
-  'abc12345', 'football', 'baseball', 'trustno1', 'deployment', 'deploy123',
-  'checklist', 'release123',
-])
+export const DEFAULT_POLICY: PasswordPolicy = { minLength: 8, requireMixed: false }
 
 export type PasswordStrength = 'weak' | 'fair' | 'good' | 'strong'
 
@@ -40,17 +43,23 @@ export interface PasswordCheck {
   strength: PasswordStrength
   /** Ordered, actionable. The first entry is what the user should fix next. */
   problems: string[]
-  /** 0–100, for the strength meter. */
+  /** 0–100, for the strength meter. Advisory only — it never blocks. */
   score: number
 }
 
 export function checkPassword(
   password: string,
   policy: PasswordPolicy = DEFAULT_POLICY,
-  context: { email?: string; name?: string } = {},
+  /**
+   * Kept in the signature although nothing reads it any more.
+   *
+   * Every caller passes the user's email and name, and the parameter is what a
+   * "do not use your own name" rule would need if one is ever reinstated.
+   * Removing it would mean touching four call sites to add it back.
+   */
+  _context: { email?: string; name?: string } = {},
 ): PasswordCheck {
   const problems: string[] = []
-  const lower = password.toLowerCase()
 
   if (password.length < policy.minLength) {
     problems.push(`Use at least ${policy.minLength} characters.`)
@@ -65,33 +74,16 @@ export function checkPassword(
     }
   }
 
-  if (BLOCKLIST.has(lower)) {
-    problems.push('That password is too common — pick something less predictable.')
-  }
-
-  // Repeated characters and simple sequences read as long but are trivial.
-  if (/^(.)\1+$/.test(password)) {
-    problems.push('Avoid repeating a single character.')
-  }
-  if (/(?:0123|1234|2345|3456|4567|5678|6789|abcd|bcde|cdef|qwer|asdf)/i.test(password)) {
-    problems.push('Avoid keyboard patterns and simple sequences.')
-  }
-
-  // Personal information is the first thing an attacker tries.
-  const emailLocal = context.email?.split('@')[0]?.toLowerCase()
-  if (emailLocal && emailLocal.length >= 4 && lower.includes(emailLocal)) {
-    problems.push('Do not include your email address.')
-  }
-  for (const part of (context.name ?? '').toLowerCase().split(/\s+/)) {
-    if (part.length >= 4 && lower.includes(part)) {
-      problems.push('Do not include your name.')
-      break
-    }
-  }
-
   return { ok: problems.length === 0, problems, ...gradeStrength(password) }
 }
 
+/**
+ * The strength meter is guidance, not a gate.
+ *
+ * It is what is left to nudge someone towards a better password now that the
+ * rules do not, so it stays: a short password still reads "weak" in red, it is
+ * just no longer refused.
+ */
 function gradeStrength(password: string): { strength: PasswordStrength; score: number } {
   if (!password) return { strength: 'weak', score: 0 }
 

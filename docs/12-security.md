@@ -22,7 +22,9 @@ Covered in detail in [docs/04](04-authentication.md); the security-relevant deci
 | Absolute session cap | `absoluteExpiry` claim, checked in the `jwt` callback | a rolling idle timeout must not extend a session indefinitely |
 | Reset notification | `password-changed` email after every change | the only signal a user gets that their account was taken over |
 
-**Password policy.** Length ≥ 12 from `Setting.passwordMinLength`, plus `zxcvbn` score ≥ 3. Length and a strength estimator beat composition rules — mandatory-symbol policies produce `Password1!` at scale, which is in every wordlist.
+**Password policy.** Minimum length only — 8 by default, from `Setting.passwordMinLength`. `Setting.passwordRequireMixed` can add a case-and-digit requirement per organization and is **off** by default.
+
+This was relaxed deliberately. It previously required 12 characters with mixed case and a digit, and rejected a common-password blocklist, repeated characters, keyboard runs, and anything containing the user's own name or email — which made passwords hard enough to set that people could not remember them. `password` and `12345678` are now accepted. What bounds the risk is invite-only registration, Argon2id hashing, per-account and per-IP rate limits, lockout after repeated failures, and instant revocation via `sessionEpoch` — none of which make a guessable password safe. **If this is ever exposed beyond an invited team, reinstate the blocklist first:** it is the one check that costs a legitimate user nothing. `zxcvbn` is referenced in older drafts of these docs but has never been a dependency. See `src/lib/auth/password-policy.ts`.
 
 ---
 

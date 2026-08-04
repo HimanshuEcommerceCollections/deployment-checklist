@@ -374,6 +374,40 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    name: '0008-relax-password-policy',
+    /**
+     * Bring existing organizations onto the relaxed policy: minimum length 8, no
+     * composition requirement.
+     *
+     * Changing the Prisma defaults is not enough on its own. `@default` applies
+     * when a row is created, and every Setting row already written carries the old
+     * 12 / true — while the services read `settings?.passwordMinLength ??
+     * DEFAULT_POLICY.minLength`, so the stored value wins and the new default is
+     * never consulted. Without this the relaxation would appear to ship and change
+     * nothing for anyone already using the system.
+     *
+     * Deliberately NOT alwaysRun. It is a one-time relaxation, not a standing
+     * override: an administrator who later decides on 14 characters must not have
+     * it quietly undone on the next deploy. Same reasoning as the note on `0007`
+     * about never overwriting an admin's edits.
+     *
+     * Scoped to rows still holding the old defaults exactly. Anything already
+     * customised is somebody's decision and is left alone.
+     */
+    up: async (client) => {
+      const { count } = await client.setting.updateMany({
+        where: { passwordMinLength: 12, passwordRequireMixed: true },
+        data: { passwordMinLength: 8, passwordRequireMixed: false },
+      })
+
+      console.log(
+        count > 0
+          ? `      relaxed the password policy for ${count} organization${count === 1 ? '' : 's'} (min 8, no composition rule)`
+          : '      no organization was still on the old 12/mixed defaults',
+      )
+    },
+  },
 ]
 
 /**
