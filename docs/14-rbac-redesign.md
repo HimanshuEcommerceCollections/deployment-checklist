@@ -1,7 +1,7 @@
 # 14 — RBAC redesign
 
-Status: **Phase 1 implemented** (§14.2, §14.3, §14.5C). Phases 2–4 outstanding.
-Refines [05-authorization.md](05-authorization.md).
+Status: **Phase 1 implemented** (§14.2, §14.3). **§14.5C is reversed — see §14.7.**
+Phases 2–4 outstanding. Refines [05-authorization.md](05-authorization.md).
 
 Context: 5–20 users, one internal team, four projects, one organization.
 
@@ -297,6 +297,10 @@ permissions" without removing any.
 
 ### C. Project access: delete the dead ends, do not build them
 
+> **Reversed. See [§14.7](#147-reversal-project-assignment-is-the-access-mechanism).**
+> Kept as written because the reasoning below was sound for the requirement it was
+> answering, and the reversal only makes sense against it.
+
 With §14.2 in place, project membership no longer controls anything. So:
 
 - **Delete** the Add Member and Edit buttons on `/projects/[id]/members` — both
@@ -393,3 +397,70 @@ memberships and let `projectFilter` narrow. No schema change, no migration.
 
 Phase 1 is the one that matters. Everything else is polish on a system that, until
 it lands, cannot show a single project to a single user.
+
+---
+
+## 14.7 Reversal: project assignment IS the access mechanism
+
+**Supersedes §14.5C. Phase 4 above is now implemented.**
+
+The requirement changed: an administrator assigns specific projects to a user, and
+that user sees only those. §14.5C assumed access would stay organisation-wide, so it
+removed the two member-management buttons rather than building them. That assumption
+no longer holds, so the buttons are real and `/projects/[id]/members` manages
+`Membership` again.
+
+### What already worked, and what did not
+
+The authorization half needed nothing. `projectScopeFor` / `projectFilter` have
+always narrowed to the projects where an actor holds the permission, returning
+`{ in: [] }` for an actor with none — the correct empty result rather than an
+unfiltered query. `resolvePermissions` reads `Membership` per request, so a grant or
+revocation takes effect on the next navigation with no session bump and no re-login.
+
+What did *not* work, and is the reason this path could be described as "dormant"
+rather than "unused": **seven service guards called `requirePermission` with no
+scope.** `can()` with no scope consults only the global grant set, so every one of
+them rejected the users project scoping exists for — *before* the correctly-written
+filter on the next line could return the rows they were entitled to. A user assigned
+to one project could not list projects at all.
+
+The fix is a distinction, now explicit in the helper names:
+
+- **`requireAnyProject(ctx, permission)`** — coarse gate for a read that then narrows
+  itself. "Do they hold this anywhere?" Pair it with `projectFilter` in the query,
+  which does the precise scoping. Never use it alone to protect a single entity.
+- **`requirePermission(ctx, permission, { projectId })`** — exact check, for when the
+  project is named by the caller.
+
+`visibleNavigation` had the same flaw and the same fix, via `anyProject` on a nav
+item: otherwise a user assigned to a project loses the link to it. Administration
+items deliberately do **not** get this — admin authority is organisation-wide by
+nature, and a project grant must never light up an admin link.
+
+### The trap that makes assignment decoration
+
+An organisation-wide role carrying `project.read` satisfies the permission
+everywhere, so `projectScopeFor` short-circuits to "every project" and assignments
+mean nothing. Four of the five seeded roles do exactly that — Release Manager,
+Engineer, QA and Viewer all include it.
+
+The seeded roles were deliberately **not** re-flagged. They are bundles: Release
+Manager also carries `environment.manage`, `settings.read` and template permissions,
+which are organisation-level duties, and making the role project-only would strip
+them. Instead the distinction is surfaced where the decision is made — the org-wide
+role picker marks such roles **all projects**, and the user's Project access panel
+warns when one is held. To restrict someone to specific projects, leave those roles
+unticked and assign projects instead. `UpdateUserSchema.roleIds` has no minimum, so
+an administrator can hold zero org-wide roles.
+
+`Role.isAssignableOnProject` is now read for the first time: a role flagged
+organisation-only cannot be granted on a project, or project assignment would become
+a way to hand out org-wide authority one project at a time.
+
+### Still organisation-wide by design
+
+Templates, environments, settings, roles, users and the audit log. Only projects and
+their deployments are project-scoped. Extending scoping further would need the same
+guard audit as above — the pattern to look for is `requirePermission` with no scope
+sitting above a `projectFilter`.

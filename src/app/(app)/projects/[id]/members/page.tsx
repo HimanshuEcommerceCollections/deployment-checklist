@@ -1,97 +1,133 @@
 import Link from 'next/link'
+import { notFound } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { listProjectMembers } from '@/features/projects/actions/members.actions'
+import { ProjectMembersManager } from '@/features/projects/components/project-members-manager'
+import { membersService } from '@/features/projects/server/members-service'
+import { projectsService } from '@/features/projects/server/projects-service'
+import { can } from '@/lib/authz/authorize'
+import { PERMISSIONS } from '@/lib/authz/permissions'
+import { db } from '@/lib/db/prisma'
+import { getRequestContext } from '@/server/context'
 
 export const metadata = { title: 'Project Access' }
 
 /**
- * Project access is org-wide.
+ * Who can work on this project.
  *
- * Access is decided by the actor's role, evaluated by `can()` — not by a
- * Membership row. This page previously offered "Add Member" and "Edit" buttons
- * pointing at routes that were never written, so both 404'd.
+ * This was a read-only explainer stating that access is organisation-wide and
+ * there was no membership to manage — the position docs/14 §14.5C took when it
+ * removed the two buttons that 404'd. That decision is reversed: project
+ * assignment is now the mechanism, so the buttons are real.
  *
- * Rather than build a member editor for a mechanism that is switched off, this
- * explains where access actually comes from and links there. The project-scoped
- * grant path still exists in the authz layer and the schema, dormant: if a
- * Membership is created, `projectFilter` narrows to it automatically. So any rows
- * that do exist are still listed. See docs/14 §14.2 and §14.5.
+ * The authorization half needed no work. `projectFilter` has always narrowed reads
+ * to the projects where an actor holds the permission, so creating a Membership
+ * here is what makes a project visible to someone, and revoking hides it again on
+ * their next request.
  */
-export default async function ProjectAccessPage(props: {
-  params: Promise<{ id: string }>
-}) {
+export default async function ProjectAccessPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params
-  const members = await listProjectMembers(params.id)
+  const ctx = await getRequestContext()
+
+  const project = await projectsService.getProject(ctx, params.id).catch(() => null)
+  if (!project) notFound()
+
+  const canManage = can(ctx, PERMISSIONS.project.membersManage, { projectId: project.id })
+
+  const [members, roles] = await Promise.all([
+    canManage ? membersService.listProjectMembers(ctx, project.id) : Promise.resolve([]),
+    canManage ? membersService.listAssignableRoles(ctx) : Promise.resolve([]),
+  ])
+
+  const assignedIds = new Set(members.map((m) => m.user.id))
+
+  /**
+   * Candidates come straight from the tenant rather than through usersService,
+   * which requires `user.read` — an actor may hold `project.members.manage` on one
+   * project without being allowed to browse the whole organization's user list.
+   */
+  const candidates = canManage
+    ? (
+        await db.user.findMany({
+          where: { organizationId: ctx.organizationId, deletedAt: null, status: 'ACTIVE' },
+          select: { id: true, name: true, email: true },
+          orderBy: { name: 'asc' },
+        })
+      ).filter((user) => !assignedIds.has(user.id))
+    : []
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href={`/projects/${params.id}`}>
+        <Link href={`/projects/${project.id}`}>
           <Button variant="ghost">← Back</Button>
         </Link>
-        <h1 className="text-3xl font-bold">Project Access</h1>
+        <div>
+          <h1 className="text-3xl font-bold">Project access</h1>
+          <p className="text-sm text-muted-foreground">
+            {project.name} · {project.key}
+          </p>
+        </div>
       </div>
 
+      {canManage ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Assigned people</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ProjectMembersManager
+              projectId={project.id}
+              projectName={project.name}
+              members={members.map((member) => ({
+                userId: member.user.id,
+                name: member.user.name,
+                email: member.user.email,
+                status: member.user.status,
+                roleIds: member.roles.map((role) => role.id),
+              }))}
+              candidates={candidates}
+              roles={roles}
+              canManage
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">You cannot manage access here</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Managing who can work on a project needs the{' '}
+            <span className="font-mono text-xs">project.members.manage</span> permission, on this
+            project or organization-wide.
+          </CardContent>
+        </Card>
+      )}
+
+      {/**
+       * The distinction that decides whether assignment restricts anybody. An
+       * org-wide role carrying `project.read` satisfies the permission everywhere,
+       * so `projectFilter` returns every project and assignment becomes decoration.
+       */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Access is organisation-wide</CardTitle>
+          <CardTitle className="text-base">How access is decided</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3 text-sm text-gray-600">
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>
-            Everyone in this organisation can see and act on this project according to
-            their role. There is no per-project membership to manage.
+            Assigning someone here grants them <strong>this project only</strong>. The roles you
+            give them decide what they can do on it — view, run a deployment, tick items, ship to
+            production.
           </p>
           <p>
-            To change what someone can do here — view, run a deployment, tick items,
-            ship to production — change their role.
+            Anyone holding an <strong>organization-wide</strong> role that includes project access
+            already sees every project regardless of assignment, and will not appear above. That is
+            set per user under Users.
           </p>
-          <Link href="/admin/users">
-            <Button variant="outline" size="sm">
-              Manage users and roles
-            </Button>
-          </Link>
         </CardContent>
       </Card>
-
-      {members.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-sm font-medium text-gray-600">
-            Additional project-scoped grants
-          </h2>
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Roles on this project</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members.map((member) => (
-                  <TableRow key={member.user.id}>
-                    <TableCell className="font-medium">{member.user.name}</TableCell>
-                    <TableCell>{member.user.email}</TableCell>
-                    <TableCell className="text-sm text-gray-600">
-                      {member.roles.map((role) => role.name).join(', ') || '—'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
