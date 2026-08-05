@@ -187,52 +187,128 @@ describe('requirePermission', () => {
 })
 
 describe('resolvePermissions', () => {
+  /**
+   * Roles live on the user; assignment decides where they apply.
+   *
+   * Each permission lands in one of two places, chosen by `globalOnly` in the
+   * catalog: organization-scoped ones go into the global set, project-scoped ones
+   * apply to every assigned project and nowhere else. These assert that split,
+   * because getting it wrong in either direction is a security bug — too global and
+   * assignment stops restricting anyone, too narrow and administrators lose the
+   * organization pages.
+   */
   const rolesById = new Map([
     ['r-admin', { id: 'r-admin', key: 'admin', permissions: ['*'], isSuperAdmin: true }],
     [
-      'r-dev',
+      'r-eng',
       {
-        id: 'r-dev',
-        key: 'developer',
-        permissions: [PERMISSIONS.deployment.read, PERMISSIONS.deployment.create],
+        id: 'r-eng',
+        key: 'engineer',
+        permissions: [
+          // project-scoped
+          PERMISSIONS.deployment.read,
+          PERMISSIONS.deployment.create,
+          PERMISSIONS.project.read,
+          // organization-scoped
+          PERMISSIONS.template.read,
+        ],
         isSuperAdmin: false,
       },
     ],
     [
-      'r-qa',
-      { id: 'r-qa', key: 'qa', permissions: [PERMISSIONS.deployment.execute], isSuperAdmin: false },
+      'r-orgadmin',
+      {
+        id: 'r-orgadmin',
+        key: 'org-admin',
+        permissions: [PERMISSIONS.admin.access, PERMISSIONS.settings.manage],
+        isSuperAdmin: false,
+      },
     ],
   ])
 
-  it('flattens global roles', () => {
-    const result = resolvePermissions({ globalRoleIds: ['r-dev'], memberships: [], rolesById })
-    expect(result.global.has(PERMISSIONS.deployment.read)).toBe(true)
-    expect(result.isSuperAdmin).toBe(false)
-  })
-
-  it('detects the super-admin wildcard', () => {
-    const result = resolvePermissions({ globalRoleIds: ['r-admin'], memberships: [], rolesById })
-    expect(result.isSuperAdmin).toBe(true)
-  })
-
-  it('keeps project grants separate per project', () => {
+  it('puts organization-scoped permissions in the global set', () => {
     const result = resolvePermissions({
-      globalRoleIds: ['r-dev'],
-      memberships: [{ projectId: 'p1', roleId: 'r-qa' }],
+      roleIds: ['r-orgadmin'],
+      assignedProjectIds: [],
       rolesById,
     })
-    expect(result.global.has(PERMISSIONS.deployment.create)).toBe(true)
-    expect(result.byProject.get('p1')?.has(PERMISSIONS.deployment.execute)).toBe(true)
-    expect(result.byProject.get('p1')?.has(PERMISSIONS.deployment.create)).toBe(false)
+
+    expect(result.global.has(PERMISSIONS.admin.access)).toBe(true)
+    expect(result.global.has(PERMISSIONS.settings.manage)).toBe(true)
+    // No assignments needed: administration is not per-project.
+    expect(result.byProject.size).toBe(0)
+  })
+
+  it('applies project-scoped permissions only to assigned projects', () => {
+    const result = resolvePermissions({
+      roleIds: ['r-eng'],
+      assignedProjectIds: ['p1', 'p2'],
+      rolesById,
+    })
+
+    for (const projectId of ['p1', 'p2']) {
+      expect(result.byProject.get(projectId)?.has(PERMISSIONS.deployment.read)).toBe(true)
+      expect(result.byProject.get(projectId)?.has(PERMISSIONS.project.read)).toBe(true)
+    }
+
+    /**
+     * The assertion the whole model rests on. A project-scoped permission in the
+     * global set makes `projectScopeFor` return "every project", and assignment
+     * stops meaning anything.
+     */
+    expect(result.global.has(PERMISSIONS.deployment.read)).toBe(false)
+    expect(result.global.has(PERMISSIONS.project.read)).toBe(false)
+    expect(result.byProject.has('p3')).toBe(false)
+  })
+
+  it('splits one role across both buckets', () => {
+    const result = resolvePermissions({
+      roleIds: ['r-eng'],
+      assignedProjectIds: ['p1'],
+      rolesById,
+    })
+
+    // Templates are organization-wide, so an engineer can read them anywhere...
+    expect(result.global.has(PERMISSIONS.template.read)).toBe(true)
+    // ...while their deployment authority stops at the projects they hold.
+    expect(result.byProject.get('p1')?.has(PERMISSIONS.template.read)).toBe(false)
+  })
+
+  it('gives a user with roles but no assignments no project access at all', () => {
+    const result = resolvePermissions({
+      roleIds: ['r-eng'],
+      assignedProjectIds: [],
+      rolesById,
+    })
+
+    expect(result.byProject.size).toBe(0)
+    expect(result.global.has(PERMISSIONS.deployment.read)).toBe(false)
+    // The organization-scoped half still applies — this is a real state, not a bug.
+    expect(result.global.has(PERMISSIONS.template.read)).toBe(true)
+  })
+
+  it('detects the super-admin wildcard and keeps it global', () => {
+    const result = resolvePermissions({
+      roleIds: ['r-admin'],
+      assignedProjectIds: [],
+      rolesById,
+    })
+
+    expect(result.isSuperAdmin).toBe(true)
+    /// Confining the wildcard to assigned projects would leave a fresh install with
+    /// an administrator unable to see the projects they just created.
+    expect(result.global.has('*')).toBe(true)
   })
 
   it('ignores a deleted or unknown role rather than throwing', () => {
     const result = resolvePermissions({
-      globalRoleIds: ['r-does-not-exist'],
-      memberships: [],
+      roleIds: ['r-does-not-exist'],
+      assignedProjectIds: ['p1'],
       rolesById,
     })
+
     expect(result.global.size).toBe(0)
+    expect(result.byProject.get('p1')?.size).toBe(0)
   })
 
   it('prunes permissions that left the catalog and reports them', () => {
@@ -241,18 +317,18 @@ describe('resolvePermissions', () => {
     withStale.set('r-old', {
       id: 'r-old',
       key: 'legacy',
-      permissions: [PERMISSIONS.project.read, 'deployment.teleport'],
+      permissions: [PERMISSIONS.template.read, 'deployment.teleport'],
       isSuperAdmin: false,
     })
 
     const result = resolvePermissions({
-      globalRoleIds: ['r-old'],
-      memberships: [],
+      roleIds: ['r-old'],
+      assignedProjectIds: [],
       rolesById: withStale,
       onStale: (_key, unknown) => stale.push(...unknown),
     })
 
-    expect(result.global.has(PERMISSIONS.project.read)).toBe(true)
+    expect(result.global.has(PERMISSIONS.template.read)).toBe(true)
     expect(result.global.has('deployment.teleport')).toBe(false)
     expect(stale).toEqual(['deployment.teleport'])
   })

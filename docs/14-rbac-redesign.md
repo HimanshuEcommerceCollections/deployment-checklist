@@ -1,6 +1,6 @@
 # 14 — RBAC redesign
 
-Status: **Phase 1 implemented** (§14.2, §14.3). **§14.5C is reversed — see §14.7.**
+Status: **Phase 1 implemented** (§14.2, §14.3). **§14.5C reversed by §14.7; refined by §14.8 and §14.9.**
 Phases 2–4 outstanding. Refines [05-authorization.md](05-authorization.md).
 
 Context: 5–20 users, one internal team, four projects, one organization.
@@ -464,3 +464,150 @@ Templates, environments, settings, roles, users and the audit log. Only projects
 their deployments are project-scoped. Extending scoping further would need the same
 guard audit as above — the pattern to look for is `requirePermission` with no scope
 sitting above a `projectFilter`.
+
+---
+
+## 14.8 Roles moved to the user; assignment is only a location
+
+**Refines §14.7. `Membership` no longer carries a role.**
+
+§14.7 made project assignment the access mechanism, with a role chosen per
+assignment — so one person could be Engineer on Apex and Viewer on Website. That
+capability was removed a day later, on request, after seeing it work.
+
+The reason is the one §14.1 gave for the original problem, in a new form: **two
+places to look for someone's authority.** With per-assignment roles, answering "what
+can Sonika do?" meant reading her user record *and* every membership row. For a team
+of 5–20 people the flexibility never paid for that.
+
+### What replaced it
+
+A user holds one role set. Each permission in it lands in one of two buckets,
+decided by `globalOnly`:
+
+```
+organization-scoped  →  global set, everywhere
+project-scoped       →  each assigned project, nowhere else
+```
+
+`resolvePermissions` takes `{ roleIds, assignedProjectIds }` instead of
+`{ globalRoleIds, memberships }`. `Membership` is now one row per (user, project);
+`roleId` is nullable and read by nothing, kept so existing rows and the audit trail
+stay legible.
+
+### The classification this depends on
+
+`globalOnly` previously did one job — stop `can()` satisfying a permission from a
+project grant. It now also decides *where a user's role permissions land*, which
+makes its accuracy load-bearing rather than advisory.
+
+Auditing it turned up one wrong answer: **`template.*` was not flagged**, though
+templates live at `/admin/templates` and are shared by every project. Left unflagged,
+a Release Manager's template authority would have applied only on their assigned
+projects, and `requirePermission(ctx, template.manage)` — which takes no scope —
+would have failed for them everywhere. All six template permissions are now
+organization-scoped. `project.template.assign` deliberately is not: choosing which
+templates *a project* may use is a project decision.
+
+The catalog now partitions 23 organization-scoped / 27 project-scoped.
+
+### Consequences
+
+- **An ordinary role can no longer see every project.** `project.read` is
+  project-scoped, so it reaches only assigned projects. Before this, any role
+  carrying it defeated assignment entirely, and the UI could only warn about it.
+  Only the wildcard escapes now.
+- **`isAssignableGlobally` / `isAssignableOnProject` are no longer consulted.** There
+  is one way to grant a role, so a role being "assignable" in one place and not the
+  other has nothing left to mean. They remain in the schema, unread. The gap noted at
+  the end of §14.7 — that `isAssignableOnProject` was load-bearing but unsettable —
+  is closed by the field ceasing to matter rather than by exposing it.
+- **Changing a role changes it everywhere at once**, for every project the person is
+  assigned to. That is the point, and it is what makes the model easy to hold in your
+  head; it also means a role edit is a wider act than it was.
+
+### What did not change
+
+`can()`, `satisfies()`, `projectFilter`, `projectScopeFor`, `requireAnyProject`, and
+every service guard fixed in §14.7. The resolver feeding them changed; how they
+consume it did not.
+
+---
+
+## 14.9 Roles became templates; the user holds the permissions
+
+**Refines §14.8. `User` gains two permission arrays.**
+
+§14.8 put one role set on the user. The remaining gap was that a role was the *only*
+way to grant anything, so giving one person a single extra permission meant inventing
+a role for them — and roles named "Engineer plus export" are how a role list stops
+being reviewable.
+
+A role is now a **template**. Assigning it grants its permissions; an administrator
+can then add or remove individual permissions for that person.
+
+```
+effective = (union of the user's roles)  ∪  extraPermissions  −  revokedPermissions
+```
+
+`src/domain/authz/effective-permissions.ts` owns the rule as a pure function.
+`resolvePermissions` calls it, then splits the result by `globalOnly` exactly as
+before — so `can()`, `projectFilter` and every service guard are untouched.
+
+### Roles are still live references
+
+The obvious implementation is to copy a role's permissions onto the user at
+assignment and treat the copy as the truth. §14.6 warned against it and that warning
+still holds: a copy would stop role edits propagating, and — the sharper problem —
+removing a permission from a role would take it from **nobody**, because every
+existing holder keeps their copy. Revocation would become per-user work with no way
+to know who is affected.
+
+So the roles stay live and the per-user arrays are exceptions layered over them.
+`grant-super-admin.ts` continues to skip the session bump for the same reason.
+
+### Removals are relative to the role that was in force
+
+This is the part with real behaviour in it. A removal means "not this permission,
+even though the role grants it", which only has meaning against a particular role.
+So assigning a role that grants a revoked permission **drops the revocation** —
+`deployment.create` comes back when a role granting it is assigned, while a
+hand-added permission survives any role change because no role decides it.
+
+Only roles *new* in a change are considered, so adding a second role does not quietly
+undo unrelated exceptions. One consequence is accepted rather than worked around:
+changing the role and removing something that role grants, in the same save, will not
+stick — the rule grants it. Two saves does it, and the form applies the rule live so
+it is visible rather than a surprise on reload.
+
+### Three boundary rules, each removing a class of problem
+
+- **`extra` and `revoked` are disjoint.** "Granted and withheld" has no meaning, and
+  allowing it would make the result depend on evaluation order. One checkbox produces
+  both states, so the UI cannot express the contradiction.
+- **Exact catalog keys only.** No `deployment.*` per user — bundling is what roles are
+  for, and a per-user wildcard is a role nobody can review.
+- **The global wildcard is neither grantable nor revocable per user.** This is the
+  security-relevant one: a revocable `*` would let someone strip the last
+  administrator's authority while `assertNotLastSuperAdmin`, which reasons about
+  roles, saw nothing wrong. Super-admin therefore comes from the role and only from
+  the role.
+
+### Audit
+
+`user.permissions_changed` is its own action rather than folded into `user.updated`.
+"Priya was given `deployment.production` directly" is exactly the line someone reads
+the audit log to find after an incident, and it would be invisible inside a generic
+update. A permission change also bumps `sessionEpoch`, for the same reason a role
+change does.
+
+### The admin surface
+
+`/admin/users/[id]` now renders the whole catalog, grouped, with each row stating
+where it came from: **from role**, **added**, or struck through as **removed**. This
+is the first thing to use `PermissionDefinition`'s `group`, `label`, `description` and
+`dangerous` fields, which have existed unrendered since the first release — so the
+role editor's outstanding work (§14.5B) is now mostly a matter of reusing this.
+
+`isAssignableGlobally` and `isAssignableOnProject` are no longer read by anything.
+They remain in the schema, inert.

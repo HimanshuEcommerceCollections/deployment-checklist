@@ -47,6 +47,17 @@ export interface PermissionDefinition {
   /**
    * True when the permission cannot meaningfully be granted per-project.
    * `settings.manage` is global; `deployment.create` is not.
+   *
+   * This flag now does two jobs, and the second is why it must be accurate:
+   *
+   *   1. `can()` refuses to satisfy it from a project grant, so a role scoped to
+   *      one project can never become a route to organization-wide authority.
+   *   2. `resolvePermissions` uses it to decide WHERE a user's role permissions
+   *      land — flagged ones go into the global set, the rest apply only on the
+   *      projects that user is assigned to.
+   *
+   * So a permission left unflagged is, by definition, one that only means anything
+   * in the context of a particular project.
    */
   globalOnly?: boolean
   /** Rendered with a warning affordance in the role editor. */
@@ -68,12 +79,12 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
   { key: 'project.template.assign', group: 'projects', label: 'Assign templates', description: 'Choose which checklist templates a project may use.' },
 
   // ── Templates ─────────────────────────────────────────────────────────────
-  { key: 'template.read',      group: 'templates', label: 'View templates',      description: 'See templates, versions, sections and items.' },
-  { key: 'template.manage',    group: 'templates', label: 'Manage templates',    description: 'Create, edit, duplicate and reorder templates, sections and items.' },
-  { key: 'template.publish',   group: 'templates', label: 'Publish versions',    description: 'Freeze a draft as a new published version used by future deployments.', dangerous: true },
-  { key: 'template.delete',    group: 'templates', label: 'Delete templates',    description: 'Soft-delete a template, version, section or item.', dangerous: true },
-  { key: 'template.restore',   group: 'templates', label: 'Restore templates',   description: 'Recover template content from the trash.' },
-  { key: 'template.deprecate', group: 'templates', label: 'Deprecate versions',  description: 'Mark a published version as no longer recommended.' },
+  { key: 'template.read',      group: 'templates', label: 'View templates',      description: 'See templates, versions, sections and items.', globalOnly: true },
+  { key: 'template.manage',    group: 'templates', label: 'Manage templates',    description: 'Create, edit, duplicate and reorder templates, sections and items.', globalOnly: true },
+  { key: 'template.publish',   group: 'templates', label: 'Publish versions',    description: 'Freeze a draft as a new published version used by future deployments.', dangerous: true, globalOnly: true },
+  { key: 'template.delete',    group: 'templates', label: 'Delete templates',    description: 'Soft-delete a template, version, section or item.', dangerous: true, globalOnly: true },
+  { key: 'template.restore',   group: 'templates', label: 'Restore templates',   description: 'Recover template content from the trash.', globalOnly: true },
+  { key: 'template.deprecate', group: 'templates', label: 'Deprecate versions',  description: 'Mark a published version as no longer recommended.', globalOnly: true },
 
   // ── Deployments ───────────────────────────────────────────────────────────
   { key: 'deployment.read',      group: 'deployments', label: 'View deployments',   description: 'See deployment runs and their history.' },

@@ -43,10 +43,14 @@ export const getRequestContext = cache(async (): Promise<RequestContext> => {
       sessionEpoch: true,
       organizationId: true,
       roleIds: true,
+      extraPermissions: true,
+      revokedPermissions: true,
       timezone: true,
+      /// Assignment only — a membership no longer carries a role. Which roles the
+      /// user holds comes from `roleIds`; this says where they apply.
       memberships: {
         where: { deletedAt: null },
-        select: { projectId: true, roleId: true },
+        select: { projectId: true },
       },
     },
   })
@@ -65,8 +69,10 @@ export const getRequestContext = cache(async (): Promise<RequestContext> => {
   const rolesById = new Map(roles.map((role) => [role.id, role]))
 
   const permissions = resolvePermissions({
-    globalRoleIds: user.roleIds,
-    memberships: user.memberships,
+    roleIds: user.roleIds,
+    extraPermissions: user.extraPermissions,
+    revokedPermissions: user.revokedPermissions,
+    assignedProjectIds: user.memberships.map((m) => m.projectId),
     rolesById,
     onStale: (roleKey, unknownKeys) =>
       logger.warn(
@@ -75,7 +81,7 @@ export const getRequestContext = cache(async (): Promise<RequestContext> => {
       ),
   })
 
-  const roleKeys = collectRoleKeys(user.roleIds, user.memberships, rolesById)
+  const roleKeys = collectRoleKeys(user.roleIds, rolesById)
   const requestMeta = await getRequestMeta()
 
   return {
@@ -135,18 +141,19 @@ const getRequestMeta = cache(async () => {
   }
 })
 
+/**
+ * Role keys the actor holds, for audit rows and logging.
+ *
+ * Membership no longer contributes: a user's roles come from `roleIds` alone, and
+ * assignment only decides which projects those roles reach.
+ */
 function collectRoleKeys(
-  globalRoleIds: readonly string[],
-  memberships: readonly { roleId: string }[],
+  roleIds: readonly string[],
   rolesById: ReadonlyMap<string, { key: string }>,
 ): string[] {
   const keys = new Set<string>()
-  for (const id of globalRoleIds) {
+  for (const id of roleIds) {
     const role = rolesById.get(id)
-    if (role) keys.add(role.key)
-  }
-  for (const membership of memberships) {
-    const role = rolesById.get(membership.roleId)
     if (role) keys.add(role.key)
   }
   return [...keys]

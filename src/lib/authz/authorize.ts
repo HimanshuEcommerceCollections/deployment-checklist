@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { effectivePermissions } from '@/domain/authz/effective-permissions'
 import { ForbiddenError } from '@/domain/shared/errors'
 
 import {
@@ -270,35 +271,95 @@ interface RoleRecord {
  * Flatten role documents into the resolved permission set attached to the
  * request context. Called once per request from `getRequestContext()`.
  *
+ * ── Roles live on the user; assignment decides where they apply ──────────────
+ * A user holds one set of roles. Each permission in them lands in one of two
+ * places, decided by `globalOnly` in the catalog:
+ *
+ *   organization-scoped  →  the global set, in force everywhere
+ *   project-scoped       →  every project the user is assigned to, and nowhere else
+ *
+ * That split is what makes "roles on the user, restricted to their projects"
+ * possible at all. Putting a project-scoped permission in the global set would
+ * make `projectScopeFor` return "every project" and assignment would mean
+ * nothing — which is exactly what happened while roles were granted org-wide.
+ *
+ * A user with roles but no assignments therefore has organization-wide authority
+ * and no project access, which is the correct reading of "not assigned to
+ * anything" and is how a pure administrator resolves.
+ *
+ * Super-admin is unaffected: `can()` short-circuits on it before any of this, so
+ * the wildcard role needs no assignment to see everything.
+ *
  * Unknown keys are pruned rather than trusted: a role may still carry a
  * permission that a later release removed from the catalog. Pruning keeps the
  * grant inert; `onStale` surfaces it so it can be cleaned up instead of rotting.
  */
 export function resolvePermissions(input: {
-  globalRoleIds: readonly string[]
-  memberships: readonly { projectId: string; roleId: string }[]
+  /**
+   * The user's roles — permission templates, not the final word. What they end up
+   * with is these unioned, plus `extraPermissions`, minus `revokedPermissions`.
+   */
+  roleIds: readonly string[]
+  /** Granted to this user on top of their roles. */
+  extraPermissions?: readonly string[]
+  /** Withheld from this user despite a role granting it. */
+  revokedPermissions?: readonly string[]
+  /** Projects the user is assigned to, in any order. */
+  assignedProjectIds: readonly string[]
   rolesById: ReadonlyMap<string, RoleRecord>
   onStale?: (roleKey: string, unknownKeys: string[]) => void
 }): ActorPermissions {
   const global = new Set<string>()
   const byProject = new Map<string, Set<string>>()
+
+  const fromRoles: string[] = []
   let isSuperAdmin = false
 
-  const collect = (roleId: string, into: Set<string>) => {
+  for (const roleId of input.roleIds) {
     const role = input.rolesById.get(roleId)
-    if (!role) return                                   // deleted role → no grants
+    if (!role) continue                                 // deleted role → no grants
+
     const { valid, unknown } = pruneUnknown(role.permissions)
     if (unknown.length && input.onStale) input.onStale(role.key, unknown)
+
+    /**
+     * Super-admin comes from the role and cannot be overridden per user. The
+     * wildcard is rejected in both override lists at the boundary, so there is no
+     * way to strip it from one person — which is deliberate: a revocable wildcard
+     * would let someone remove the last administrator's authority without the
+     * lockout guard, which reasons about roles, ever noticing.
+     */
     if (role.isSuperAdmin || valid.includes(WILDCARD)) isSuperAdmin = true
-    for (const key of valid) into.add(key)
+
+    fromRoles.push(...valid)
   }
 
-  for (const roleId of input.globalRoleIds) collect(roleId, global)
+  /**
+   * The per-user layer. `pruneUnknown` again on the extras: a key that left the
+   * catalog must be inert here for the same reason it is inert on a role.
+   */
+  const { valid: extra } = pruneUnknown(input.extraPermissions ?? [])
+  const effective = effectivePermissions(fromRoles, {
+    extra,
+    revoked: input.revokedPermissions ?? [],
+  })
 
-  for (const { projectId, roleId } of input.memberships) {
+  const projectScoped = new Set<string>()
+
+  for (const key of effective) {
+    /**
+     * The wildcard is deliberately organization-scoped. It belongs to the bootstrap
+     * role, and confining it to assigned projects would leave a fresh install with
+     * an administrator who cannot see the projects they just created.
+     */
+    if (key === WILDCARD || GLOBAL_ONLY_PERMISSIONS.has(key)) global.add(key)
+    else projectScoped.add(key)
+  }
+
+  for (const projectId of input.assignedProjectIds) {
     let set = byProject.get(projectId)
     if (!set) byProject.set(projectId, (set = new Set()))
-    collect(roleId, set)
+    for (const key of projectScoped) set.add(key)
   }
 
   return { global, byProject, isSuperAdmin }

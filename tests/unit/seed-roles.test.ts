@@ -21,14 +21,24 @@ import {
  * production access looks like a one-line diff.
  */
 
-/** Build a context holding exactly one seeded role, org-wide. */
-function ctxForRole(key: string): RequestContext {
+/** The project every context below is assigned to. */
+const PROJECT = 'p1'
+
+/**
+ * Build a context holding exactly one seeded role, assigned to one project.
+ *
+ * The assignment is not incidental. Roles live on the user and their
+ * project-scoped permissions apply only where the user is assigned, so a context
+ * with no assignments has no deployment or checklist authority anywhere — which
+ * would make every capability assertion below vacuously false.
+ */
+function ctxForRole(key: string, assignedProjectIds: string[] = [PROJECT]): RequestContext {
   const role = SEED_ROLES.find((r) => r.key === key)
   if (!role) throw new Error(`No seeded role "${key}"`)
 
   const permissions = resolvePermissions({
-    globalRoleIds: ['r'],
-    memberships: [],
+    roleIds: ['r'],
+    assignedProjectIds,
     rolesById: new Map([
       [
         'r',
@@ -103,26 +113,32 @@ describe('seeded roles', () => {
 describe('role capabilities', () => {
   it('lets everyone but Viewer tick checklist items', () => {
     for (const key of ['admin', 'release-manager', 'engineer', 'qa']) {
-      expect(can(ctxForRole(key), PERMISSIONS.deployment.execute), key).toBe(true)
+      expect(can(ctxForRole(key), PERMISSIONS.deployment.execute, { projectId: PROJECT }), key).toBe(
+        true,
+      )
     }
-    expect(can(ctxForRole('viewer'), PERMISSIONS.deployment.execute)).toBe(false)
+    expect(
+      can(ctxForRole('viewer'), PERMISSIONS.deployment.execute, { projectId: PROJECT }),
+    ).toBe(false)
   })
 
   it('gives Viewer nothing that changes state', () => {
     const ctx = ctxForRole('viewer')
 
-    expect(can(ctx, PERMISSIONS.project.read)).toBe(true)
-    expect(can(ctx, PERMISSIONS.deployment.read)).toBe(true)
+    expect(can(ctx, PERMISSIONS.project.read, { projectId: PROJECT })).toBe(true)
+    expect(can(ctx, PERMISSIONS.deployment.read, { projectId: PROJECT })).toBe(true)
 
     for (const permission of [
       PERMISSIONS.deployment.execute,
       PERMISSIONS.deployment.create,
       PERMISSIONS.deployment.complete,
       PERMISSIONS.comment.create,
-      PERMISSIONS.template.manage,
     ]) {
-      expect(can(ctx, permission), permission).toBe(false)
+      expect(can(ctx, permission, { projectId: PROJECT }), permission).toBe(false)
     }
+
+    // Organization-scoped, so it needs no project scope to be denied.
+    expect(can(ctx, PERMISSIONS.template.manage)).toBe(false)
   })
 
   it('blocks Engineer and QA from production entirely', () => {
@@ -131,9 +147,12 @@ describe('role capabilities', () => {
     // just creating one.
     for (const key of ['engineer', 'qa', 'viewer']) {
       const ctx = ctxForRole(key)
-      expect(can(ctx, PERMISSIONS.deployment.production), key).toBe(false)
+      expect(can(ctx, PERMISSIONS.deployment.production, { projectId: PROJECT }), key).toBe(false)
       expect(
-        can(ctx, PERMISSIONS.deployment.execute, { isProductionEnvironment: true }),
+        can(ctx, PERMISSIONS.deployment.execute, {
+          projectId: PROJECT,
+          isProductionEnvironment: true,
+        }),
         `${key} must not act on a production run`,
       ).toBe(false)
     }
@@ -141,8 +160,18 @@ describe('role capabilities', () => {
 
   it('lets Release Manager act on production', () => {
     const ctx = ctxForRole('release-manager')
-    expect(can(ctx, PERMISSIONS.deployment.execute, { isProductionEnvironment: true })).toBe(true)
-    expect(can(ctx, PERMISSIONS.deployment.complete, { isProductionEnvironment: true })).toBe(true)
+    expect(
+      can(ctx, PERMISSIONS.deployment.execute, {
+        projectId: PROJECT,
+        isProductionEnvironment: true,
+      }),
+    ).toBe(true)
+    expect(
+      can(ctx, PERMISSIONS.deployment.complete, {
+        projectId: PROJECT,
+        isProductionEnvironment: true,
+      }),
+    ).toBe(true)
   })
 
   it('keeps organisation administration out of Release Manager', () => {
@@ -153,10 +182,12 @@ describe('role capabilities', () => {
       PERMISSIONS.role.manage,
       PERMISSIONS.user.invite,
       PERMISSIONS.settings.manage,
-      PERMISSIONS.project.delete,
     ]) {
       expect(can(ctx, permission), permission).toBe(false)
     }
+
+    // Project-scoped, so checked where they actually work.
+    expect(can(ctx, PERMISSIONS.project.delete, { projectId: PROJECT })).toBe(false)
 
     // But it must reach /admin/templates, which every admin page gates on.
     expect(can(ctx, PERMISSIONS.admin.access)).toBe(true)
@@ -171,22 +202,44 @@ describe('role capabilities', () => {
   })
 })
 
-describe('org-wide visibility (docs/14 §14.2)', () => {
+describe('project visibility (docs/14 §14.7)', () => {
   /**
-   * The regression this guards: project visibility used to come from a
-   * `memberships: { some: { userId } }` filter in each service, which ignored
-   * permissions entirely. A global role therefore granted permission but no
-   * visibility, and a fresh install showed nobody any project — including the
-   * super-admin, because a raw Prisma filter cannot honour `can()`'s
+   * Two regressions are guarded here, from opposite directions.
+   *
+   * The first: visibility used to come from a `memberships: { some: { userId } }`
+   * filter in each service, which ignored permissions entirely — so a role granted
+   * permission but no visibility, and a fresh install showed nobody any project,
+   * including the super-admin, because a raw Prisma filter cannot honour `can()`'s
    * short-circuit.
+   *
+   * The second, introduced when that was fixed by making roles organization-wide:
+   * every role carrying `project.read` then produced an UNFILTERED query, so
+   * assignment could not restrict anyone. §14.2 asserted that as correct; it is
+   * what §14.7 reversed.
    */
-  it('gives every seeded role with project.read an unfiltered project query', () => {
-    for (const key of ['admin', 'release-manager', 'engineer', 'qa', 'viewer']) {
-      expect(projectFilter(ctxForRole(key), PERMISSIONS.project.read, 'id'), key).toEqual({})
+  it('narrows an ordinary role to the projects it is assigned to', () => {
+    for (const key of ['release-manager', 'engineer', 'qa', 'viewer']) {
+      expect(projectFilter(ctxForRole(key), PERMISSIONS.project.read, 'id'), key).toEqual({
+        id: { in: [PROJECT] },
+      })
     }
   })
 
-  it('still matches no rows for an actor with no grants', () => {
+  it('leaves the super-admin unfiltered without any assignment', () => {
+    // The wildcard is organization-scoped and `can()` short-circuits on it, so the
+    // bootstrap administrator never needs assigning to see the organization.
+    expect(projectFilter(ctxForRole('admin', []), PERMISSIONS.project.read, 'id')).toEqual({})
+  })
+
+  it('matches no rows for a role with no assignment', () => {
+    // Holding Engineer but assigned to nothing is a real state — it means "can act
+    // on projects, has none". It must not become "can act on all of them".
+    expect(projectFilter(ctxForRole('engineer', []), PERMISSIONS.project.read, 'id')).toEqual({
+      id: { in: [] },
+    })
+  })
+
+  it('still matches no rows for an actor with no grants at all', () => {
     const ctx: RequestContext = {
       ...ctxForRole('viewer'),
       permissions: { global: new Set(), byProject: new Map(), isSuperAdmin: false },

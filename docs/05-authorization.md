@@ -14,7 +14,8 @@ The requirement is *"avoid checking roles directly inside business logic"* and *
 | Permission **metadata** (label, group, description, danger flag) | code → seeded to `PermissionDefinition` | a release |
 | **Roles** | `roles` collection | data entry |
 | **Role → permission mapping** | `Role.permissions[]` | data entry |
-| **Grants** (who has which role, where) | `User.roleIds`, `Membership` | data entry |
+| **Grants** (which roles, which projects) | `User.roleIds`, `Membership` | data entry |
+| **Per-user exceptions** | `User.extraPermissions`, `User.revokedPermissions` | data entry |
 | **Checks** | `can(ctx, PERMISSIONS.x, scope)` | never mention a role |
 
 Permission strings must be code because code references them — a permission invented at runtime can never be enforced by anything. What must never be hardcoded, and here is not, is the *mapping* from role to permission and the *check itself*.
@@ -32,21 +33,98 @@ An ESLint rule fails the build on any comparison against a role identity, so the
 
 ---
 
-## 5.2 Two-dimensional grants
+## 5.2 Roles are templates; the user holds the permissions
 
-Permissions are held **globally** (org-wide) or **per project**. Same user, different authority depending on where they are:
+A role is a **starting point**, not the last word. What a user actually holds is:
+
+```
+effective = (union of their roles' permissions)
+          ∪  extraPermissions      ← granted by hand, on top
+          −  revokedPermissions    ← withheld by hand, despite a role granting it
+```
+
+`src/domain/authz/effective-permissions.ts` owns that rule as a pure function, so it
+can be read and tested without a database.
+
+**Roles stay live references.** Editing a role changes every holder on their next
+request — nothing is copied onto the user at assignment. That is deliberate: a copy
+would stop role edits propagating, and removing a permission from a role would take
+it from nobody. It is also what lets `grant-super-admin.ts` skip bumping
+`sessionEpoch`.
+
+### Changing a role restores what it grants
+
+A removal means "not this permission, **even though the role grants it**" — so it
+only has meaning against the role in force when it was made. Assigning a role that
+grants a revoked permission therefore drops the revocation:
+
+| Step | Roles | extra | revoked | Effective |
+|---|---|---|---|---|
+| Assign Engineer | Engineer | — | — | read, create, execute … |
+| Remove create, add rollback | Engineer | rollback | create | read, execute, rollback |
+| Assign QA — QA has no `create`, so the revocation stands | QA | rollback | create | read, execute, rollback |
+| Back to Engineer — it grants `create`, so the revocation goes | Engineer | rollback | — | read, create, execute, rollback |
+
+Only roles **new** in a change are considered, so adding a second role does not
+silently undo unrelated exceptions. One consequence, deliberate: changing the role
+*and* removing something that role grants, in the same save, will not stick. Two
+saves does it, and the UI applies the rule live so it is visible rather than a
+surprise.
+
+### Three boundary rules
+
+- `extraPermissions` and `revokedPermissions` are **disjoint**. One checkbox produces
+  both: un-ticking a role permission revokes it, un-ticking a hand-added one deletes
+  the addition.
+- **Exact catalog keys only** per user — no `deployment.*`. Bundling is what roles are
+  for, and a wildcard granted to one person is a role nobody can review.
+- **The global wildcard can be neither granted nor revoked per user.** If someone
+  needs everything, give them Admin. A revocable `*` could strip the last
+  administrator's authority without the lockout guard — which reasons about roles —
+  ever noticing.
+
+## 5.3 Where those permissions apply
+
+A person holds **one** set of roles. Each permission in them lands in one of two
+places, decided by `globalOnly` in the catalog:
+
+- **organization-scoped** → the global set, in force everywhere
+- **project-scoped** → every project the user is assigned to, and nowhere else
 
 ```
 Priya
-├── global roleIds: [ Developer ]              ─── Developer everywhere
-└── memberships:
-      ├── { project: Apex,    role: Release Manager }   ─── can publish + complete on Apex
-      └── { project: Website, role: QA }                ─── can only tick items on Website
+├── roleIds: [ Engineer ]        ─── what she can do
+└── assigned to: Apex, Website   ─── where she can do it
 
-Effective on Apex     = Developer ∪ Release Manager
-Effective on Website  = Developer ∪ QA
-Effective on Elevate  = Developer
+Effective on Apex     = Engineer's project permissions
+Effective on Website  = Engineer's project permissions
+Effective on Elevate  = nothing — not assigned
+Everywhere            = Engineer's organization permissions (template.read, …)
 ```
+
+That split is what makes the model work at all. A project-scoped permission in the
+global set would make `projectScopeFor` return "every project" and assignment would
+stop meaning anything — which is precisely what happened while roles were granted
+organization-wide. So a permission left unflagged in the catalog is, by definition,
+one that only means something on a particular project.
+
+Two states worth naming because both are legitimate:
+
+- **Roles but no assignments** — organization-wide authority, no project access. This
+  is how a pure administrator resolves.
+- **Assignments but no roles** — sees nothing. Assignment says *where* authority
+  applies; with no roles there is none to apply.
+
+Super-admin is exempt: `can()` short-circuits on it before any scope is consulted,
+so the wildcard role needs no assignment to see the organization.
+
+> **Superseded.** This was previously two independent grant dimensions, where a
+> `Membership` carried the role a person held on that project — so the same user
+> could be Release Manager on Apex and QA on Website. That was removed in favour of
+> one role set per person: two places to look for someone's authority was the thing
+> that made the old design hard to reason about. `Membership.roleId` is retained,
+> nullable and unread, and `0009-lift-membership-roles-to-user` unioned the
+> per-project roles onto each user so nobody's access changed.
 
 > **Guard the list, then filter it — and pick the right guard.**
 >
@@ -81,7 +159,7 @@ Step 2 turns "who may touch production" into pure configuration. `deployment.cre
 
 ---
 
-## 5.3 Wildcards
+## 5.4 Wildcards
 
 Three grant forms, deliberately no more:
 
@@ -95,7 +173,7 @@ Prefix wildcards are matched right-to-left, so `deployment.item.skip` is satisfi
 
 ---
 
-## 5.4 Enforcement points
+## 5.5 Enforcement points
 
 ### Service layer — the one that matters
 
@@ -196,7 +274,7 @@ No permission logic and no role data reaches the client bundle. Client checks on
 
 ---
 
-## 5.5 Row-level rules beyond permissions
+## 5.6 Row-level rules beyond permissions
 
 Some rules are not "does this actor hold permission X" but "may this actor do X *to this thing, right now*". Those belong in the domain layer as policies, next to the state machine, not smuggled into the permission catalog.
 
@@ -234,7 +312,7 @@ The last super-admin rule deserves emphasis. Without it, an admin removing their
 
 ---
 
-## 5.6 Testing
+## 5.7 Testing
 
 Authorization is the part of this system where a bug is a breach, so it gets the heaviest test coverage. Domain-layer purity makes that cheap — no database, no HTTP.
 
@@ -282,7 +360,7 @@ Two conformance tests keep the surface honest as it grows:
 
 ---
 
-## 5.7 Extending
+## 5.8 Extending
 
 | Requirement | Change |
 |---|---|

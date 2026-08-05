@@ -408,6 +408,85 @@ const MIGRATIONS: Migration[] = [
       )
     },
   },
+  {
+    name: '0009-lift-membership-roles-to-user',
+    /**
+     * Move to roles on the user, with membership as pure project assignment.
+     *
+     * Before this, a Membership carried the role a person held on that project, so
+     * the same user could be Engineer on one and Viewer on another. That capability
+     * is being removed in favour of one role set per user, applied to whichever
+     * projects they are assigned to.
+     *
+     * The lift preserves effective access rather than resetting it: every role a
+     * user held through any membership is unioned into `User.roleIds`. Someone who
+     * was Engineer on two projects becomes an Engineer assigned to two projects,
+     * which resolves to the same permissions in the same places.
+     *
+     * It cannot be `alwaysRun`. Running twice is harmless for the union — it is
+     * idempotent — but a user whose roles an administrator later trimmed would have
+     * them silently restored from membership rows that still remember the old ones.
+     */
+    up: async (client) => {
+      const memberships = await client.membership.findMany({
+        where: { deletedAt: null, roleId: { not: null } },
+        select: { id: true, userId: true, projectId: true, roleId: true },
+        orderBy: { createdAt: 'asc' },
+      })
+
+      if (memberships.length === 0) {
+        console.log('      no project-scoped role grants to lift')
+        return
+      }
+
+      const rolesByUser = new Map<string, Set<string>>()
+      for (const row of memberships) {
+        if (!row.roleId) continue
+        const set = rolesByUser.get(row.userId) ?? new Set<string>()
+        set.add(row.roleId)
+        rolesByUser.set(row.userId, set)
+      }
+
+      for (const [userId, roleIds] of rolesByUser) {
+        const user = await client.user.findUnique({
+          where: { id: userId },
+          select: { email: true, roleIds: true },
+        })
+        if (!user) continue
+
+        const merged = [...new Set([...user.roleIds, ...roleIds])]
+        if (merged.length === user.roleIds.length) continue
+
+        await client.user.update({ where: { id: userId }, data: { roleIds: merged } })
+        console.log(
+          `      ${user.email}: lifted ${merged.length - user.roleIds.length} role(s) from memberships`,
+        )
+      }
+
+      /**
+       * Collapse to one row per (user, project). The old unique key included
+       * roleId, so two roles on one project meant two rows — and the new key would
+       * reject them.
+       */
+      const seen = new Set<string>()
+      let collapsed = 0
+      for (const row of memberships) {
+        const pair = `${row.userId}:${row.projectId}`
+        if (seen.has(pair)) {
+          await client.membership.delete({ where: { id: row.id } })
+          collapsed += 1
+          continue
+        }
+        seen.add(pair)
+        await client.membership.update({ where: { id: row.id }, data: { roleId: null } })
+      }
+
+      console.log(
+        `      ${seen.size} assignment(s) kept, roleId cleared` +
+          (collapsed > 0 ? `, ${collapsed} duplicate row(s) removed` : ''),
+      )
+    },
+  },
 ]
 
 /**

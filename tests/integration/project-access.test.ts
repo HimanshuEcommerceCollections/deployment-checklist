@@ -40,7 +40,7 @@ async function ctxForUser(userId: string): Promise<RequestContext> {
       email: true,
       name: true,
       roleIds: true,
-      memberships: { where: { deletedAt: null }, select: { projectId: true, roleId: true } },
+      memberships: { where: { deletedAt: null }, select: { projectId: true } },
     },
   })
 
@@ -57,8 +57,8 @@ async function ctxForUser(userId: string): Promise<RequestContext> {
     organizationId,
     roleKeys: [],
     permissions: resolvePermissions({
-      globalRoleIds: user.roleIds,
-      memberships: user.memberships,
+      roleIds: user.roleIds,
+      assignedProjectIds: user.memberships.map((m) => m.projectId),
       rolesById: new Map(roles.map((r) => [r.id, r])),
     }),
     requestId: `test-${user.id}`,
@@ -143,11 +143,8 @@ describe('a user with no grants', () => {
 
 describe('a user assigned to one project', () => {
   it('sees that project and no other', async () => {
-    const user = await newUser()
-    await membersService.addMember(adminCtx, projectA.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
 
     const ctx = await ctxForUser(user.id)
     const visible = await projectsService.listUserProjects(ctx)
@@ -156,11 +153,8 @@ describe('a user assigned to one project', () => {
   })
 
   it('is refused the project they were not assigned', async () => {
-    const user = await newUser()
-    await membersService.addMember(adminCtx, projectA.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
 
     const ctx = await ctxForUser(user.id)
 
@@ -169,11 +163,8 @@ describe('a user assigned to one project', () => {
   })
 
   it('is refused another project’s deployments', async () => {
-    const user = await newUser()
-    await membersService.addMember(adminCtx, projectA.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
 
     const ctx = await ctxForUser(user.id)
 
@@ -184,11 +175,8 @@ describe('a user assigned to one project', () => {
   })
 
   it('sees only its own runs in the cross-project deployment list', async () => {
-    const user = await newUser()
-    await membersService.addMember(adminCtx, projectA.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
 
     const ctx = await ctxForUser(user.id)
     const visible = await allDeploymentsService.listUserDeployments(ctx)
@@ -199,15 +187,12 @@ describe('a user assigned to one project', () => {
   })
 
   it('loses it again when the grant is revoked', async () => {
-    const user = await newUser()
-    await membersService.addMember(adminCtx, projectA.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
 
     expect((await projectsService.listUserProjects(await ctxForUser(user.id))).length).toBe(1)
 
-    await membersService.removeMember(adminCtx, projectA.id, user.id)
+    await membersService.revokeProject(adminCtx, projectA.id, user.id)
 
     /// Permissions resolve per request from Membership, so this takes effect on the
     /// next context — no session bump and no re-login.
@@ -215,112 +200,155 @@ describe('a user assigned to one project', () => {
   })
 
   it('gains a second project without losing the first', async () => {
-    const user = await newUser()
-    await membersService.addMember(adminCtx, projectA.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
-    await membersService.addMember(adminCtx, projectB.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
+    await membersService.assignProject(adminCtx, projectB.id, user.id)
 
     const visible = await projectsService.listUserProjects(await ctxForUser(user.id))
     expect(visible.map((p) => p.id).sort()).toEqual([projectA.id, projectB.id].sort())
   })
 })
 
-describe('an organization-wide grant still wins', () => {
-  it('shows every project regardless of assignment', async () => {
-    // This is the trap the UI now warns about: assign one project to someone who
-    // holds project.read org-wide and they still see all of them.
+describe('an ordinary role can no longer escape assignment', () => {
+  /**
+   * This describe used to assert the opposite — that a role carrying `project.read`
+   * showed every project regardless of assignment. That was true while roles were
+   * granted organization-wide, and it is exactly what made assignment decoration.
+   *
+   * `resolvePermissions` now places project-scoped permissions on assigned projects
+   * only, so the escape hatch is closed for every role except the wildcard.
+   */
+  it('sees only its assigned projects even holding a project.read role', async () => {
     const user = await newUser([orgOnlyRoleId])
-    await membersService.addMember(adminCtx, projectA.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
 
     const ctx = await ctxForUser(user.id)
     const visible = await projectsService.listUserProjects(ctx)
 
     const total = await db.project.count({ where: { organizationId, deletedAt: null } })
-    expect(visible.length).toBe(total)
-    expect(visible.length).toBeGreaterThan(1)
+    expect(total).toBeGreaterThan(1)
+    expect(visible.map((p) => p.id)).toEqual([projectA.id])
   })
 })
 
-describe('which roles may be granted on a project', () => {
-  it('refuses a role flagged organization-wide only', async () => {
+describe('roles come from the user, not the assignment', () => {
+  it('grants nothing to a user assigned to a project but holding no roles', async () => {
     const user = await newUser()
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
 
-    // isAssignableOnProject has been in the schema since the beginning and nothing
-    // read it. Granting an org-only role per project would be a way to hand out
-    // org-wide authority one project at a time.
-    await expect(
-      membersService.addMember(adminCtx, projectA.id, {
-        userId: user.id,
-        roleIds: [orgOnlyRoleId],
-      }),
-    ).rejects.toThrow(/organization-wide/i)
+    const ctx = await ctxForUser(user.id)
+
+    /// The distinction the model rests on. Assignment says WHERE a user's roles
+    /// apply; with no roles there is nothing to apply, so access is still nil.
+    expect(ctx.permissions.byProject.get(projectA.id)?.size ?? 0).toBe(0)
+    await expect(projectsService.listUserProjects(ctx)).rejects.toThrow()
   })
 
-  it('refuses it on a role change too, not only on the initial grant', async () => {
-    const user = await newUser()
-    await membersService.addMember(adminCtx, projectA.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
+  it('applies the same roles to every project the user is assigned to', async () => {
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
+    await membersService.assignProject(adminCtx, projectB.id, user.id)
 
-    await expect(
-      membersService.updateMemberRoles(adminCtx, projectA.id, user.id, {
-        roleIds: [orgOnlyRoleId],
-      }),
-    ).rejects.toThrow(/organization-wide/i)
+    const ctx = await ctxForUser(user.id)
+
+    // One role set, two places. There is no longer a way to be Engineer on one and
+    // something else on the other.
+    for (const id of [projectA.id, projectB.id]) {
+      expect(ctx.permissions.byProject.get(id)?.has(PERMISSIONS.deployment.execute)).toBe(true)
+    }
   })
 
-  it('omits org-only roles from the assignable list', async () => {
-    const assignable = await membersService.listAssignableRoles(adminCtx)
+  it('keeps organization-scoped permissions global while project ones stay scoped', async () => {
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
 
-    expect(assignable.map((r) => r.id)).not.toContain(orgOnlyRoleId)
-    expect(assignable.map((r) => r.id)).toContain(engineerRoleId)
-  })
-})
+    const ctx = await ctxForUser(user.id)
 
-describe('the user-first view of grants', () => {
-  it('lists every project a user holds, with their roles on each', async () => {
-    const user = await newUser()
-    await membersService.addMember(adminCtx, projectA.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
-    await membersService.addMember(adminCtx, projectB.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
-
-    const granted = await membersService.listUserProjects(adminCtx, user.id)
-
-    expect(granted).toHaveLength(2)
-    expect(granted.map((g) => g.project.id).sort()).toEqual([projectA.id, projectB.id].sort())
-    expect(granted[0]!.roles.map((r) => r.name)).toContain('Engineer')
+    // Templates are organization-wide, so Engineer reads them anywhere...
+    expect(ctx.permissions.global.has(PERMISSIONS.template.read)).toBe(true)
+    // ...while deployment authority is confined to the assigned project.
+    expect(ctx.permissions.global.has(PERMISSIONS.deployment.read)).toBe(false)
+    expect(ctx.permissions.byProject.get(projectA.id)?.has(PERMISSIONS.deployment.read)).toBe(true)
   })
 
-  it('collapses several roles on one project into a single entry', async () => {
-    const qaRoleId = (
-      await db.role.findFirstOrThrow({ where: { organizationId, key: 'qa', deletedAt: null } })
+  it('changing the user’s roles changes what they can do everywhere at once', async () => {
+    const viewerRoleId = (
+      await db.role.findFirstOrThrow({ where: { organizationId, key: 'viewer', deletedAt: null } })
     ).id
 
-    const user = await newUser()
-    await membersService.addMember(adminCtx, projectA.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId, qaRoleId],
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
+
+    expect(
+      (await ctxForUser(user.id)).permissions.byProject
+        .get(projectA.id)
+        ?.has(PERMISSIONS.deployment.execute),
+    ).toBe(true)
+
+    await db.user.update({ where: { id: user.id }, data: { roleIds: [viewerRoleId] } })
+
+    const after = await ctxForUser(user.id)
+    expect(after.permissions.byProject.get(projectA.id)?.has(PERMISSIONS.deployment.execute)).toBe(
+      false,
+    )
+    // Still assigned, still sees it — just cannot act on it.
+    expect(after.permissions.byProject.get(projectA.id)?.has(PERMISSIONS.project.read)).toBe(true)
+  })
+})
+
+describe('assignment is idempotent', () => {
+  it('assigning twice leaves one row and does not fail', async () => {
+    const user = await newUser([engineerRoleId])
+
+    const first = await membersService.assignProject(adminCtx, projectA.id, user.id)
+    const second = await membersService.assignProject(adminCtx, projectA.id, user.id)
+
+    expect(first.created).toBe(true)
+    expect(second.created).toBe(false)
+
+    const rows = await db.membership.count({
+      where: { userId: user.id, projectId: projectA.id, deletedAt: null },
     })
+    expect(rows).toBe(1)
+  })
 
-    const granted = await membersService.listUserProjects(adminCtx, user.id)
+  it('re-assigning after a revoke revives the row rather than colliding', async () => {
+    const user = await newUser([engineerRoleId])
 
-    // Membership is one row per (user, project, role); callers think in people.
-    expect(granted).toHaveLength(1)
-    expect(granted[0]!.roles).toHaveLength(2)
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
+    await membersService.revokeProject(adminCtx, projectA.id, user.id)
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
+
+    /// `@@unique([userId, projectId])` ignores deletedAt, so a second insert would
+    /// hit the index — the revive is what keeps this working.
+    const rows = await db.membership.count({
+      where: { userId: user.id, projectId: projectA.id, deletedAt: null },
+    })
+    expect(rows).toBe(1)
+
+    const visible = await projectsService.listUserProjects(await ctxForUser(user.id))
+    expect(visible.map((p) => p.id)).toEqual([projectA.id])
+  })
+
+  it('refuses to revoke someone who was never assigned', async () => {
+    const user = await newUser([engineerRoleId])
+
+    await expect(membersService.revokeProject(adminCtx, projectA.id, user.id)).rejects.toThrow(
+      /not assigned/i,
+    )
+  })
+})
+
+describe('the user-first view of assignments', () => {
+  it('lists every project a user is assigned to', async () => {
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
+    await membersService.assignProject(adminCtx, projectB.id, user.id)
+
+    const assigned = await membersService.listUserProjects(adminCtx, user.id)
+
+    expect(assigned).toHaveLength(2)
+    expect(assigned.map((g) => g.project.id).sort()).toEqual([projectA.id, projectB.id].sort())
   })
 
   it('hides grants pointing at a deleted project', async () => {
@@ -335,10 +363,7 @@ describe('the user-first view of grants', () => {
     })
 
     const user = await newUser()
-    await membersService.addMember(adminCtx, project.id, {
-      userId: user.id,
-      roleIds: [engineerRoleId],
-    })
+    await membersService.assignProject(adminCtx, project.id, user.id)
 
     expect(await membersService.listUserProjects(adminCtx, user.id)).toHaveLength(1)
 

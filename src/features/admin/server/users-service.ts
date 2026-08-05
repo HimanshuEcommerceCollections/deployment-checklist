@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { reconcileRevocations } from '@/domain/authz/effective-permissions'
 import { NotFoundError, PreconditionFailedError, ValidationError } from '@/domain/shared/errors'
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
@@ -9,6 +10,13 @@ import { db } from '@/lib/db/prisma'
 import { invitationService } from '@/features/auth/server/invitation-service'
 
 import type { InviteUserInput, UpdateUserInput } from '../schemas/users.schema'
+
+/** Order-insensitive comparison, for deciding whether anything actually changed. */
+function sameKeys(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false
+  const set = new Set(b)
+  return a.every((key) => set.has(key))
+}
 
 /** Statuses from which an account can still sign in and exercise its roles. */
 const CAN_SIGN_IN = ['ACTIVE'] as const
@@ -28,7 +36,15 @@ export class UsersService {
         organizationId: ctx.organizationId,
         deletedAt: deleted ? { not: null } : null,
       },
-      select: { id: true, name: true, email: true, status: true, roleIds: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        status: true,
+        roleIds: true,
+        extraPermissions: true,
+        revokedPermissions: true,
+      },
     })
   }
 
@@ -146,6 +162,8 @@ export class UsersService {
         jobTitle: true,
         status: true,
         roleIds: true,
+        extraPermissions: true,
+        revokedPermissions: true,
         createdAt: true,
         lastLoginAt: true,
         passwordChangedAt: true,
@@ -197,27 +215,11 @@ export class UsersService {
 
     const roles = await db.role.findMany({
       where: { id: { in: input.roleIds }, organizationId: ctx.organizationId, deletedAt: null },
-      select: { id: true, name: true, isAssignableGlobally: true },
+      select: { id: true, name: true, permissions: true },
     })
 
     if (roles.length !== input.roleIds.length) {
       throw new NotFoundError('Role', 'one or more of the selected roles')
-    }
-
-    /**
-     * Project-scoped roles are granted through a Membership, not org-wide. Letting
-     * one through here would hand it to the user on every project at once.
-     *
-     * A ValidationError rather than a precondition, matching how
-     * invitationService.invite refuses the same thing — the message names the role,
-     * which a generic precondition reason cannot.
-     */
-    const projectOnly = roles.filter((r) => !r.isAssignableGlobally)
-    if (projectOnly.length > 0) {
-      throw new ValidationError(
-        `"${projectOnly[0]!.name}" can only be granted on a project, not organization-wide.`,
-        { roleIds: projectOnly.map((r) => `"${r.name}" is project-scoped only`) },
-      )
     }
 
     const rolesChanged =
@@ -226,6 +228,38 @@ export class UsersService {
 
     const statusChanged = input.status !== target.status
 
+    /**
+     * A removal means "not this permission, even though the role grants it", so it
+     * only has meaning against the role that was in force when it was made.
+     * Assigning a role that grants a revoked permission therefore drops the
+     * revocation — which is what brings `deployment.create` back when QA replaces
+     * Engineer.
+     *
+     * Only the roles NEW in this change are considered, so an unrelated exception
+     * survives an administrator adding a second role. The pure rule lives in
+     * src/domain/authz/effective-permissions.ts.
+     */
+    const addedRoleIds = input.roleIds.filter((id) => !target.roleIds.includes(id))
+    const grantedByNewRoles = roles
+      .filter((role) => addedRoleIds.includes(role.id))
+      .flatMap((role) => role.permissions)
+
+    const revokedPermissions = reconcileRevocations({
+      revoked: input.revokedPermissions,
+      grantedByNewRoles,
+    })
+
+    /// Kept disjoint, so `extra` never contains something also revoked. The schema
+    /// refuses the contradictory input; this keeps the stored pair consistent after
+    /// the reconciliation above has moved things.
+    const extraPermissions = input.extraPermissions.filter(
+      (key) => !revokedPermissions.includes(key),
+    )
+
+    const permissionsChanged =
+      !sameKeys(extraPermissions, target.extraPermissions) ||
+      !sameKeys(revokedPermissions, target.revokedPermissions)
+
     const updated = await db.$transaction(async (tx) => {
       const user = await tx.user.update({
         where: { id: userId },
@@ -233,19 +267,32 @@ export class UsersService {
           name: input.name,
           status: input.status,
           roleIds: input.roleIds,
+          extraPermissions,
+          revokedPermissions,
           /**
            * Any of these takes effect on the next request rather than whenever the
-           * JWT happens to expire. Roles are resolved per request from roleIds, but
-           * the token carries the epoch — so without this, a suspended account keeps
-           * browsing and a revoked role keeps working until the token ages out.
+           * JWT happens to expire. Permissions are resolved per request, but the
+           * token carries the epoch — so without this, a suspended account keeps
+           * browsing and a withdrawn permission keeps working until the token ages
+           * out.
            */
-          ...(statusChanged || rolesChanged ? { sessionEpoch: { increment: 1 } } : {}),
+          ...(statusChanged || rolesChanged || permissionsChanged
+            ? { sessionEpoch: { increment: 1 } }
+            : {}),
           ...(input.status === 'ACTIVE' && target.status !== 'ACTIVE'
             ? { failedLoginCount: 0, lockedUntil: null }
             : {}),
           updatedById: ctx.actorId,
         },
-        select: { id: true, email: true, name: true, status: true, roleIds: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          status: true,
+          roleIds: true,
+          extraPermissions: true,
+          revokedPermissions: true,
+        },
       })
 
       if (statusChanged) {
@@ -279,7 +326,26 @@ export class UsersService {
         })
       }
 
-      if (!statusChanged && !rolesChanged) {
+      /**
+       * Its own entry, and deliberately not folded into `user.updated`. "Priya was
+       * given deployment.production directly" is precisely the line someone reads
+       * the audit log to find after an incident, and it would be invisible inside a
+       * generic update.
+       */
+      if (permissionsChanged) {
+        await audit.record(tx, ctx, AUDIT_ACTIONS.user.permissionsChanged, {
+          entityType: 'User',
+          entityId: user.id,
+          entityLabel: user.email,
+          targetUserId: user.id,
+          metadata: { added: extraPermissions, removed: revokedPermissions },
+          summary:
+            `${ctx.actorName} changed ${user.email}'s permissions — ` +
+            `${extraPermissions.length} added, ${revokedPermissions.length} removed`,
+        })
+      }
+
+      if (!statusChanged && !rolesChanged && !permissionsChanged) {
         await audit.record(tx, ctx, AUDIT_ACTIONS.user.updated, {
           entityType: 'User',
           entityId: user.id,
