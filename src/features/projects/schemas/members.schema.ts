@@ -1,18 +1,14 @@
 import { z } from 'zod'
 
-export const AddMemberSchema = z
+/**
+ * Project assignment. No roles: which roles a person holds lives on the user, and
+ * an assignment only decides which projects those roles reach.
+ */
+export const AssignProjectSchema = z
   .object({
-    userId: z.string(),
-    roleIds: z.string().array().min(1),
+    /** MongoDB ObjectId — 24 hex characters. */
+    userId: z.string().regex(/^[0-9a-f]{24}$/i, 'Invalid user id'),
   })
   .strict()
 
-export type AddMemberInput = z.infer<typeof AddMemberSchema>
-
-export const UpdateMemberSchema = z
-  .object({
-    roleIds: z.string().array().min(1),
-  })
-  .strict()
-
-export type UpdateMemberInput = z.infer<typeof UpdateMemberSchema>
+export type AssignProjectInput = z.infer<typeof AssignProjectSchema>

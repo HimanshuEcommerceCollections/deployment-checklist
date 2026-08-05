@@ -13,7 +13,11 @@ import { usersService } from '@/features/admin/server/users-service'
 import { membersService } from '@/features/projects/server/members-service'
 import { projectsService } from '@/features/projects/server/projects-service'
 import { requirePermission } from '@/lib/authz/authorize'
-import { PERMISSIONS } from '@/lib/authz/permissions'
+import {
+  PERMISSION_DEFINITIONS,
+  PERMISSION_GROUPS,
+  PERMISSIONS,
+} from '@/lib/authz/permissions'
 import { getRequestContext } from '@/server/context'
 
 export const metadata = { title: 'Admin - User' }
@@ -35,11 +39,10 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
   const user = await usersService.getUser(ctx, id).catch(() => null)
   if (!user) notFound()
 
-  const [roles, granted, allProjects, projectRoles] = await Promise.all([
+  const [roles, assigned, allProjects] = await Promise.all([
     rolesService.listRoles(ctx),
     membersService.listUserProjects(ctx, user.id),
     projectsService.listUserProjects(ctx),
-    membersService.listAssignableRoles(ctx).catch(() => []),
   ])
 
   const isSelf = user.id === ctx.actorId
@@ -47,21 +50,33 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
   const locked = user.lockedUntil && user.lockedUntil > new Date()
 
   /**
-   * Whether any organization-wide role they hold already grants project access.
+   * Whether a role they hold carries organization-wide authority over projects.
    *
-   * This is the check that decides whether assigning projects restricts anything
-   * at all: `projectScopeFor` short-circuits on a global grant and returns "every
-   * project", so a user with `project.read` org-wide sees everything and their
-   * assignments are decoration. The UI says so rather than letting an
-   * administrator assign three projects and wonder why all four are visible.
+   * Only super-admin can now do this: `resolvePermissions` puts project-scoped
+   * permissions on assigned projects rather than in the global set, so an ordinary
+   * role no longer grants access everywhere. The wildcard is the exception, and
+   * `can()` short-circuits on it before any scope is consulted.
    */
-  const seesAllProjects = held.some(
-    (role) => role.isSuperAdmin || role.permissions.includes(PERMISSIONS.project.read),
-  )
+  const seesAllProjects = held.some((role) => role.isSuperAdmin)
 
-  const assignedProjectIds = new Set(granted.map((entry) => entry.project.id))
+  /**
+   * The catalog, flattened for display. Built here rather than imported by the
+   * client component so the permission definitions stay server-side and only the
+   * fields the matrix renders cross the boundary.
+   */
+  const permissionRows = PERMISSION_DEFINITIONS.map((definition) => ({
+    key: definition.key,
+    label: definition.label,
+    description: definition.description,
+    group: definition.group,
+    groupLabel: PERMISSION_GROUPS[definition.group],
+    dangerous: Boolean(definition.dangerous),
+    orgWide: Boolean(definition.globalOnly),
+  }))
+
+  const assignedIds = new Set(assigned.map((entry) => entry.project.id))
   const availableProjects = allProjects
-    .filter((project) => !assignedProjectIds.has(project.id))
+    .filter((project) => !assignedIds.has(project.id))
     .map((project) => ({ id: project.id, name: project.name, key: project.key }))
 
   return (
@@ -95,15 +110,17 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
                 name: user.name,
                 status: user.status,
                 roleIds: user.roleIds,
+                extraPermissions: user.extraPermissions,
+                revokedPermissions: user.revokedPermissions,
               }}
               roles={roles.map((role) => ({
                 id: role.id,
                 name: role.name,
                 key: role.key,
-                isAssignableGlobally: role.isAssignableGlobally,
                 isSuperAdmin: role.isSuperAdmin,
-                grantsAllProjects: role.permissions.includes(PERMISSIONS.project.read),
+                permissions: role.permissions,
               }))}
+              permissions={permissionRows}
               isSelf={isSelf}
             />
           </CardContent>
@@ -163,9 +180,9 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
           <UserProjectAccess
             userId={user.id}
             userName={user.name}
-            granted={granted}
+            assigned={assigned.map((entry) => entry.project)}
             available={availableProjects}
-            roles={projectRoles}
+            roleNames={held.map((role) => role.name)}
             seesAllProjects={seesAllProjects}
           />
         </CardContent>

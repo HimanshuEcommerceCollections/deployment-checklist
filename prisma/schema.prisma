@@ -251,8 +251,31 @@ model User {
   passwordHash  String? // null until an invite is accepted
   status        UserStatus @default(INVITED)
 
-  /// Global (org-wide) roles. Project-scoped roles live on Membership.
+  /**
+   * The user's roles. A role is a permission TEMPLATE, not the final word: what the
+   * user ends up with is the union of these roles' permissions, plus
+   * `extraPermissions`, minus `revokedPermissions`.
+   *
+   * Deliberately still a live reference rather than a copy. Editing a role changes
+   * every holder on their next request, which is what makes `grant-super-admin.ts`
+   * able to skip bumping sessionEpoch. See docs/14 §14.9.
+   */
   roleIds String[] @db.ObjectId
+
+  /**
+   * Granted to this user on top of their roles. Exact catalog keys only — no
+   * wildcards, because bundling is what roles are for.
+   */
+  extraPermissions String[]
+
+  /**
+   * Withheld from this user despite a role granting it.
+   *
+   * Scoped to the role that was in force when the removal was made: assigning a new
+   * role drops any revocation that role grants, so `Create Deployment` comes back
+   * when QA replaces Engineer. Kept disjoint from `extraPermissions`.
+   */
+  revokedPermissions String[]
 
   timezone String?
   theme    String? // overrides Setting.defaultTheme when allowed
@@ -356,15 +379,22 @@ model Membership {
   projectId String  @db.ObjectId
   project   Project @relation(fields: [projectId], references: [id])
 
-  roleId String @db.ObjectId
-  role   Role   @relation(fields: [roleId], references: [id])
+  /// Historical. A membership is an assignment, not a grant of a role: which roles
+  /// a user holds lives on `User.roleIds`, and this says which projects those roles
+  /// reach. Kept nullable rather than dropped so existing rows stay readable, and
+  /// because the audit trail references what was there. Nothing reads it.
+  roleId String? @db.ObjectId
+  role   Role?   @relation(fields: [roleId], references: [id])
 
   createdById String?   @db.ObjectId
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  @@unique([userId, projectId, roleId])
+  /// One row per person per project. Was (userId, projectId, roleId), which allowed
+  /// several rows for the same pair — meaningless now that the role is not part of
+  /// the assignment.
+  @@unique([userId, projectId])
   @@index([projectId, deletedAt])
   @@index([userId, deletedAt])
   @@map("memberships")

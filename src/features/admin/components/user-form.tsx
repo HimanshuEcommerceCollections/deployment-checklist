@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -9,21 +9,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 import { updateUser } from '../actions/users.actions'
+import { type PermissionRow, UserPermissionMatrix } from './user-permission-matrix'
 
 export interface AssignableRole {
   id: string
   name: string
   key: string
-  /** Project-scoped roles are granted through a membership, not here. */
-  isAssignableGlobally: boolean
   isSuperAdmin: boolean
-  /**
-   * True when granting this role organization-wide makes every project visible.
-   *
-   * `projectScopeFor` short-circuits on a global grant, so this is the difference
-   * between "assign them three projects" working and being decoration.
-   */
-  grantsAllProjects: boolean
+  /** The permissions this role grants — the template an admin starts from. */
+  permissions: string[]
 }
 
 interface UserFormProps {
@@ -33,8 +27,12 @@ interface UserFormProps {
     name: string
     status: string
     roleIds: string[]
+    extraPermissions: string[]
+    revokedPermissions: string[]
   }
   roles: AssignableRole[]
+  /** The catalog, already flattened for display. */
+  permissions: PermissionRow[]
   /** True when this row is the signed-in actor — some choices become dangerous. */
   isSelf: boolean
 }
@@ -49,28 +47,89 @@ const STATUSES = [
   },
 ] as const
 
-export function UserForm({ user, roles, isSelf }: UserFormProps) {
+const sameSet = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every((key) => b.includes(key))
+
+export function UserForm({ user, roles, permissions, isSelf }: UserFormProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
   const [name, setName] = useState(user.name)
   const [status, setStatus] = useState(user.status)
   const [roleIds, setRoleIds] = useState<string[]>(user.roleIds)
+  const [extra, setExtra] = useState<string[]>(user.extraPermissions)
+  const [revoked, setRevoked] = useState<string[]>(user.revokedPermissions)
   const [error, setError] = useState<string | null>(null)
 
   /// INVITED is not offered: it is the state an account starts in and is left by
   /// accepting an invitation, not something an admin sets.
   const statusLocked = user.status === 'INVITED'
 
-  const assignable = roles.filter((role) => role.isAssignableGlobally)
+  /** What the currently ticked roles grant. Recomputed as roles are ticked. */
+  const fromRoles = useMemo(() => {
+    const set = new Set<string>()
+    for (const role of roles) {
+      if (!roleIds.includes(role.id)) continue
+      for (const key of role.permissions) set.add(key)
+    }
+    return set
+  }, [roles, roleIds])
+
   const dirty =
     name !== user.name ||
     status !== user.status ||
-    roleIds.length !== user.roleIds.length ||
-    roleIds.some((id) => !user.roleIds.includes(id))
+    !sameSet(roleIds, user.roleIds) ||
+    !sameSet(extra, user.extraPermissions) ||
+    !sameSet(revoked, user.revokedPermissions)
 
+  /**
+   * Ticking a role applies the specification's rule immediately, rather than saving
+   * and letting the server surprise them: a removal only means "not this, even though
+   * the role grants it", so a role that grants a revoked permission clears that
+   * revocation. The server applies the same rule for any other caller.
+   */
   function toggleRole(id: string) {
-    setRoleIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]))
+    const next = roleIds.includes(id) ? roleIds.filter((r) => r !== id) : [...roleIds, id]
+    setRoleIds(next)
+
+    if (!roleIds.includes(id)) {
+      const added = roles.find((role) => role.id === id)
+      if (added) setRevoked((prev) => prev.filter((key) => !added.permissions.includes(key)))
+    }
+  }
+
+  /**
+   * One checkbox, four transitions — which is what keeps `extra` and `revoked`
+   * disjoint without asking the administrator to think about two lists:
+   *
+   *   role grants it, held      → revoke it
+   *   role grants it, revoked   → drop the revocation
+   *   added by hand             → drop the addition (not a revocation; no role grants it)
+   *   nobody grants it          → add it
+   */
+  function togglePermission(key: string) {
+    const roleGrants = fromRoles.has(key)
+
+    if (revoked.includes(key)) {
+      setRevoked((prev) => prev.filter((k) => k !== key))
+      return
+    }
+
+    if (roleGrants) {
+      setRevoked((prev) => [...prev, key])
+      return
+    }
+
+    setExtra((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
+  }
+
+  function reset() {
+    setName(user.name)
+    setStatus(user.status)
+    setRoleIds(user.roleIds)
+    setExtra(user.extraPermissions)
+    setRevoked(user.revokedPermissions)
+    setError(null)
   }
 
   function submit(event: React.FormEvent) {
@@ -78,11 +137,15 @@ export function UserForm({ user, roles, isSelf }: UserFormProps) {
     setError(null)
 
     startTransition(async () => {
-      const result = await updateUser(user.id, { name, status, roleIds })
+      const result = await updateUser(user.id, {
+        name,
+        status,
+        roleIds,
+        extraPermissions: extra,
+        revokedPermissions: revoked,
+      })
 
       if (!result.ok) {
-        // The service's message is the useful one — the last-administrator refusal
-        // and the project-scoped-role refusal each need different action.
         setError(result.message)
         return
       }
@@ -92,7 +155,12 @@ export function UserForm({ user, roles, isSelf }: UserFormProps) {
     })
   }
 
-  const losingOwnAccess = isSelf && (status !== 'ACTIVE' || roleIds.length === 0)
+  const heldCount = permissions.filter(
+    (row) => !revoked.includes(row.key) && (fromRoles.has(row.key) || extra.includes(row.key)),
+  ).length
+
+  const superAdmin = roles.some((role) => roleIds.includes(role.id) && role.isSuperAdmin)
+  const losingOwnAccess = isSelf && (status !== 'ACTIVE' || heldCount === 0)
 
   return (
     <form onSubmit={submit} className="space-y-6">
@@ -143,14 +211,17 @@ export function UserForm({ user, roles, isSelf }: UserFormProps) {
       </div>
 
       <fieldset className="space-y-2">
-        <Label>Organization-wide roles</Label>
-        {assignable.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No organization-wide roles exist yet. Create one under Roles.
-          </p>
+        <Label>Roles</Label>
+        <p className="text-xs text-muted-foreground">
+          A role is a starting point. Ticking one grants its permissions below, and you can then
+          add or remove individual permissions for this person.
+        </p>
+
+        {roles.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No roles exist yet. Create one under Roles.</p>
         ) : (
           <div className="space-y-2">
-            {assignable.map((role) => (
+            {roles.map((role) => (
               <label key={role.id} className="flex items-start gap-2">
                 <input
                   type="checkbox"
@@ -166,28 +237,47 @@ export function UserForm({ user, roles, isSelf }: UserFormProps) {
                       full access
                     </span>
                   )}
-                  {!role.isSuperAdmin && role.grantsAllProjects && (
-                    <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-300">
-                      all projects
-                    </span>
-                  )}
                   <span className="ml-2 font-mono text-xs text-muted-foreground">{role.key}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {role.permissions.length} permission{role.permissions.length === 1 ? '' : 's'}
+                  </span>
                 </span>
               </label>
             ))}
           </div>
         )}
-        {assignable.some((role) => role.grantsAllProjects || role.isSuperAdmin) && (
-          <p className="text-xs text-muted-foreground">
-            A role marked <strong>all projects</strong> grants access to every project in the
-            organization. To limit someone to specific projects, leave those unticked and use
-            Project access below instead.
+      </fieldset>
+
+      <fieldset className="space-y-3 border-t pt-5">
+        <div className="flex items-baseline justify-between gap-3">
+          <Label>Permissions</Label>
+          <span className="text-xs text-muted-foreground">
+            {heldCount} of {permissions.length} held
+          </span>
+        </div>
+
+        {superAdmin ? (
+          <p className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm">
+            This user holds a <strong>full access</strong> role. Every permission applies regardless
+            of what is ticked below, and it cannot be narrowed per person — remove that role first
+            if you want to limit them.
           </p>
-        )}
-        {roles.length !== assignable.length && (
-          <p className="text-xs text-muted-foreground">
-            Project-only roles are not listed here — grant those under Project access.
-          </p>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Un-ticking a permission a role grants records it as removed for this person; the role
+              itself is unchanged. Assigning a role later that grants it will bring it back.
+            </p>
+
+            <UserPermissionMatrix
+              rows={permissions}
+              fromRoles={fromRoles}
+              extra={extra}
+              revoked={revoked}
+              disabled={pending}
+              onToggle={togglePermission}
+            />
+          </>
         )}
       </fieldset>
 
@@ -202,17 +292,7 @@ export function UserForm({ user, roles, isSelf }: UserFormProps) {
         <Button type="submit" disabled={pending || !dirty}>
           {pending ? 'Saving…' : 'Save changes'}
         </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={pending || !dirty}
-          onClick={() => {
-            setName(user.name)
-            setStatus(user.status)
-            setRoleIds(user.roleIds)
-            setError(null)
-          }}
-        >
+        <Button type="button" variant="ghost" disabled={pending || !dirty} onClick={reset}>
           Reset
         </Button>
       </div>

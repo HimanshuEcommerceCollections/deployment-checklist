@@ -35,12 +35,24 @@ export default async function ProjectAccessPage(props: { params: Promise<{ id: s
 
   const canManage = can(ctx, PERMISSIONS.project.membersManage, { projectId: project.id })
 
-  const [members, roles] = await Promise.all([
-    canManage ? membersService.listProjectMembers(ctx, project.id) : Promise.resolve([]),
-    canManage ? membersService.listAssignableRoles(ctx) : Promise.resolve([]),
-  ])
-
+  const members = canManage ? await membersService.listProjectMembers(ctx, project.id) : []
   const assignedIds = new Set(members.map((m) => m.user.id))
+
+  /**
+   * Roles are shown for context, so the page needs their names. Read directly
+   * rather than through rolesService, whose listRoles is not gated but whose whole
+   * rows would put every permission array in this page's flight payload.
+   */
+  const roleNames = canManage
+    ? Object.fromEntries(
+        (
+          await db.role.findMany({
+            where: { organizationId: ctx.organizationId, deletedAt: null },
+            select: { id: true, name: true },
+          })
+        ).map((role) => [role.id, role.name]),
+      )
+    : {}
 
   /**
    * Candidates come straight from the tenant rather than through usersService,
@@ -51,10 +63,17 @@ export default async function ProjectAccessPage(props: { params: Promise<{ id: s
     ? (
         await db.user.findMany({
           where: { organizationId: ctx.organizationId, deletedAt: null, status: 'ACTIVE' },
-          select: { id: true, name: true, email: true },
+          select: { id: true, name: true, email: true, roleIds: true },
           orderBy: { name: 'asc' },
         })
-      ).filter((user) => !assignedIds.has(user.id))
+      )
+        .filter((user) => !assignedIds.has(user.id))
+        .map((user) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          roleNames: user.roleIds.map((id) => roleNames[id]).filter((n): n is string => Boolean(n)),
+        }))
     : []
 
   return (
@@ -84,12 +103,11 @@ export default async function ProjectAccessPage(props: { params: Promise<{ id: s
                 userId: member.user.id,
                 name: member.user.name,
                 email: member.user.email,
-                status: member.user.status,
-                roleIds: member.roles.map((role) => role.id),
+                roleNames: member.user.roleIds
+                  .map((id) => roleNames[id])
+                  .filter((n): n is string => Boolean(n)),
               }))}
               candidates={candidates}
-              roles={roles}
-              canManage
             />
           </CardContent>
         </Card>

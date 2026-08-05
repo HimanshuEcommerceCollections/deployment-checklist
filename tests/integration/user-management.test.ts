@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { usersService } from '@/features/admin/server/users-service'
 import type { RequestContext } from '@/lib/authz/authorize'
-import { SEED_ROLES, WILDCARD } from '@/lib/authz/permissions'
+import { PERMISSIONS, SEED_ROLES, WILDCARD } from '@/lib/authz/permissions'
 import { db } from '@/lib/db/prisma'
 
 /**
@@ -45,6 +45,27 @@ function ctxFor(roleKey: string, actorId: string): RequestContext {
     },
     requestId: `test-${roleKey}`,
     timezone: 'UTC',
+  }
+}
+
+/**
+ * `updateUser` input with the permission overrides defaulted.
+ *
+ * They are required on the parsed type — the schema defaults them at the boundary,
+ * so anything reaching the service has them — and most of these tests are about
+ * roles or status rather than per-user permissions.
+ */
+function update(input: {
+  name: string
+  status: 'ACTIVE' | 'SUSPENDED' | 'DEACTIVATED'
+  roleIds: string[]
+  extraPermissions?: string[]
+  revokedPermissions?: string[]
+}) {
+  return {
+    ...input,
+    extraPermissions: (input.extraPermissions ?? []) as never,
+    revokedPermissions: (input.revokedPermissions ?? []) as never,
   }
 }
 
@@ -110,11 +131,11 @@ describe('changing roles and status', () => {
   it('grants an organization-wide role to an existing user', async () => {
     const user = await newUser()
 
-    const updated = await usersService.updateUser(adminCtx, user.id, {
+    const updated = await usersService.updateUser(adminCtx, user.id, update({
       name: 'Managed Account',
       status: 'ACTIVE',
       roleIds: [engineerRoleId],
-    })
+    }))
 
     expect(updated.roleIds).toEqual([engineerRoleId])
   })
@@ -122,11 +143,11 @@ describe('changing roles and status', () => {
   it('revokes live sessions when roles change', async () => {
     const user = await newUser({ roleIds: [engineerRoleId] })
 
-    await usersService.updateUser(adminCtx, user.id, {
+    await usersService.updateUser(adminCtx, user.id, update({
       name: 'Managed Account',
       status: 'ACTIVE',
       roleIds: [],
-    })
+    }))
 
     const after = await db.user.findUniqueOrThrow({ where: { id: user.id } })
     /// Roles resolve per request but the token carries the epoch, so without the
@@ -137,11 +158,11 @@ describe('changing roles and status', () => {
   it('revokes live sessions when the account is suspended', async () => {
     const user = await newUser({ roleIds: [engineerRoleId] })
 
-    await usersService.updateUser(adminCtx, user.id, {
+    await usersService.updateUser(adminCtx, user.id, update({
       name: 'Managed Account',
       status: 'SUSPENDED',
       roleIds: [engineerRoleId],
-    })
+    }))
 
     const after = await db.user.findUniqueOrThrow({ where: { id: user.id } })
     expect(after.status).toBe('SUSPENDED')
@@ -155,11 +176,11 @@ describe('changing roles and status', () => {
       data: { failedLoginCount: 5, lockedUntil: new Date(Date.now() + 900_000) },
     })
 
-    await usersService.updateUser(adminCtx, user.id, {
+    await usersService.updateUser(adminCtx, user.id, update({
       name: 'Managed Account',
       status: 'ACTIVE',
       roleIds: [],
-    })
+    }))
 
     const after = await db.user.findUniqueOrThrow({ where: { id: user.id } })
     expect(after.lockedUntil).toBeNull()
@@ -169,11 +190,11 @@ describe('changing roles and status', () => {
   it('does not bump the epoch for a rename alone', async () => {
     const user = await newUser({ roleIds: [engineerRoleId] })
 
-    await usersService.updateUser(adminCtx, user.id, {
+    await usersService.updateUser(adminCtx, user.id, update({
       name: 'Renamed Only',
       status: 'ACTIVE',
       roleIds: [engineerRoleId],
-    })
+    }))
 
     const after = await db.user.findUniqueOrThrow({ where: { id: user.id } })
     expect(after.name).toBe('Renamed Only')
@@ -185,21 +206,27 @@ describe('changing roles and status', () => {
     const user = await newUser()
 
     await expect(
-      usersService.updateUser(adminCtx, user.id, {
+      usersService.updateUser(adminCtx, user.id, update({
         name: 'Managed Account',
         status: 'ACTIVE',
         roleIds: ['ffffffffffffffffffffffff'],
-      }),
+      })),
     ).rejects.toThrow()
   })
 
-  it('refuses a project-scoped role granted organization-wide', async () => {
+  it('accepts any role organization-wide now that there is one way to grant one', async () => {
+    /**
+     * This used to refuse a role flagged `isAssignableGlobally: false`. That flag
+     * existed to separate org-wide grants from per-project ones, and with roles
+     * living on the user and assignment carrying no role, "assignable here but not
+     * there" has nothing left to mean. docs/14 §14.9.
+     */
     const role = await db.role.create({
       data: {
         organizationId,
-        key: `proj-only-${Date.now()}`,
-        name: 'Project Only Tester',
-        permissions: ['deployment.read'],
+        key: `formerly-project-only-${Date.now()}`,
+        name: 'Formerly Project Only',
+        permissions: [PERMISSIONS.deployment.read],
         isAssignableGlobally: false,
       },
     })
@@ -208,14 +235,157 @@ describe('changing roles and status', () => {
 
     const user = await newUser()
 
-    // Granting it here would hand it to them on every project at once.
-    await expect(
-      usersService.updateUser(adminCtx, user.id, {
+    const updated = await usersService.updateUser(
+      adminCtx,
+      user.id,
+      update({ name: 'Managed Account', status: 'ACTIVE', roleIds: [projectOnlyRoleId] }),
+    )
+
+    expect(updated.roleIds).toEqual([projectOnlyRoleId])
+  })
+})
+
+describe('per-user permissions on top of a role', () => {
+  it('grants an extra permission the role does not include', async () => {
+    const user = await newUser({ roleIds: [engineerRoleId] })
+
+    const updated = await usersService.updateUser(
+      adminCtx,
+      user.id,
+      update({
         name: 'Managed Account',
         status: 'ACTIVE',
-        roleIds: [projectOnlyRoleId],
+        roleIds: [engineerRoleId],
+        extraPermissions: [PERMISSIONS.deployment.rollback],
       }),
-    ).rejects.toThrow(/only be granted on a project/i)
+    )
+
+    expect(updated.extraPermissions).toEqual([PERMISSIONS.deployment.rollback])
+  })
+
+  it('withholds a permission the role does grant', async () => {
+    const user = await newUser({ roleIds: [engineerRoleId] })
+
+    const updated = await usersService.updateUser(
+      adminCtx,
+      user.id,
+      update({
+        name: 'Managed Account',
+        status: 'ACTIVE',
+        roleIds: [engineerRoleId],
+        revokedPermissions: [PERMISSIONS.deployment.create],
+      }),
+    )
+
+    expect(updated.revokedPermissions).toEqual([PERMISSIONS.deployment.create])
+  })
+
+  it('restores a revoked permission when a newly assigned role grants it', async () => {
+    /**
+     * The rule from the specification, end to end through the service.
+     *
+     * `deployment.read` rather than the specification's `create`: the seeded QA role
+     * does not grant create, and a test asserting a restore has to revoke something
+     * the incoming role actually has. Both Engineer and QA grant read.
+     */
+    const qaRoleId = (
+      await db.role.findFirstOrThrow({ where: { organizationId, key: 'qa', deletedAt: null } })
+    ).id
+
+    const user = await newUser({ roleIds: [engineerRoleId] })
+
+    await usersService.updateUser(
+      adminCtx,
+      user.id,
+      update({
+        name: 'Managed Account',
+        status: 'ACTIVE',
+        roleIds: [engineerRoleId],
+        revokedPermissions: [PERMISSIONS.deployment.read],
+        extraPermissions: [PERMISSIONS.deployment.export],
+      }),
+    )
+
+    const after = await usersService.updateUser(
+      adminCtx,
+      user.id,
+      update({
+        name: 'Managed Account',
+        status: 'ACTIVE',
+        roleIds: [qaRoleId],
+        revokedPermissions: [PERMISSIONS.deployment.read],
+        extraPermissions: [PERMISSIONS.deployment.export],
+      }),
+    )
+
+    // Comes back, because QA grants it.
+    expect(after.revokedPermissions).toEqual([])
+    // Stays, because it was added by hand and no role decides it.
+    expect(after.extraPermissions).toEqual([PERMISSIONS.deployment.export])
+  })
+
+  it('keeps a revocation the newly assigned role does not grant', async () => {
+    const viewerRoleId = (
+      await db.role.findFirstOrThrow({ where: { organizationId, key: 'viewer', deletedAt: null } })
+    ).id
+
+    const user = await newUser({ roleIds: [engineerRoleId] })
+
+    // Viewer grants neither, so both revocations are unrelated to the change.
+    const after = await usersService.updateUser(
+      adminCtx,
+      user.id,
+      update({
+        name: 'Managed Account',
+        status: 'ACTIVE',
+        roleIds: [viewerRoleId],
+        revokedPermissions: [PERMISSIONS.deployment.rollback],
+      }),
+    )
+
+    expect(after.revokedPermissions).toEqual([PERMISSIONS.deployment.rollback])
+  })
+
+  it('revokes live sessions when only the permissions change', async () => {
+    const user = await newUser({ roleIds: [engineerRoleId] })
+
+    await usersService.updateUser(
+      adminCtx,
+      user.id,
+      update({
+        name: 'Managed Account',
+        status: 'ACTIVE',
+        roleIds: [engineerRoleId],
+        extraPermissions: [PERMISSIONS.deployment.rollback],
+      }),
+    )
+
+    const after = await db.user.findUniqueOrThrow({ where: { id: user.id } })
+    /// Same reasoning as a role change: the epoch is what makes it immediate.
+    expect(after.sessionEpoch).toBe(user.sessionEpoch + 1)
+  })
+
+  it('records its own audit action, not a generic update', async () => {
+    const user = await newUser({ roleIds: [engineerRoleId] })
+
+    await usersService.updateUser(
+      adminCtx,
+      user.id,
+      update({
+        name: 'Managed Account',
+        status: 'ACTIVE',
+        roleIds: [engineerRoleId],
+        extraPermissions: [PERMISSIONS.deployment.rollback],
+      }),
+    )
+
+    const entry = await db.auditLog.findFirst({
+      where: { action: 'user.permissions_changed', targetUserId: user.id },
+    })
+
+    // The line someone reads the audit log to find after an incident.
+    expect(entry).not.toBeNull()
+    expect(entry?.metadata).toMatchObject({ added: [PERMISSIONS.deployment.rollback] })
   })
 })
 
@@ -223,11 +393,11 @@ describe('audit', () => {
   it('records a role change as its own action', async () => {
     const user = await newUser()
 
-    await usersService.updateUser(adminCtx, user.id, {
+    await usersService.updateUser(adminCtx, user.id, update({
       name: 'Managed Account',
       status: 'ACTIVE',
       roleIds: [engineerRoleId],
-    })
+    }))
 
     const entry = await db.auditLog.findFirst({
       where: { action: 'user.role_changed', targetUserId: user.id },
@@ -239,11 +409,11 @@ describe('audit', () => {
   it('records a suspension separately from a plain update', async () => {
     const user = await newUser()
 
-    await usersService.updateUser(adminCtx, user.id, {
+    await usersService.updateUser(adminCtx, user.id, update({
       name: 'Managed Account',
       status: 'SUSPENDED',
       roleIds: [],
-    })
+    }))
 
     const suspended = await db.auditLog.findFirst({
       where: { action: 'user.suspended', targetUserId: user.id },
@@ -251,11 +421,11 @@ describe('audit', () => {
     expect(suspended).not.toBeNull()
     expect(suspended?.metadata).toMatchObject({ from: 'ACTIVE', to: 'SUSPENDED' })
 
-    await usersService.updateUser(adminCtx, user.id, {
+    await usersService.updateUser(adminCtx, user.id, update({
       name: 'Managed Account',
       status: 'ACTIVE',
       roleIds: [],
-    })
+    }))
 
     const reactivated = await db.auditLog.findFirst({
       where: { action: 'user.reactivated', targetUserId: user.id },
@@ -266,11 +436,11 @@ describe('audit', () => {
   it('records a bare rename as user.updated', async () => {
     const user = await newUser()
 
-    await usersService.updateUser(adminCtx, user.id, {
+    await usersService.updateUser(adminCtx, user.id, update({
       name: 'Just A Rename',
       status: 'ACTIVE',
       roleIds: [],
-    })
+    }))
 
     const entry = await db.auditLog.findFirst({
       where: { action: 'user.updated', targetUserId: user.id },
@@ -299,19 +469,19 @@ describe('the last administrator cannot be locked out', () => {
     if (others > 0) return
 
     await expect(
-      usersService.updateUser(adminCtx, adminCtx.actorId, {
+      usersService.updateUser(adminCtx, adminCtx.actorId, update({
         name: 'Platform Admin',
         status: 'ACTIVE',
         roleIds: [engineerRoleId],
-      }),
+      })),
     ).rejects.toThrow(/last administrator/i)
 
     await expect(
-      usersService.updateUser(adminCtx, adminCtx.actorId, {
+      usersService.updateUser(adminCtx, adminCtx.actorId, update({
         name: 'Platform Admin',
         status: 'SUSPENDED',
         roleIds: [superRoleId],
-      }),
+      })),
     ).rejects.toThrow(/last administrator/i)
   })
 
@@ -321,11 +491,11 @@ describe('the last administrator cannot be locked out', () => {
     const target = await newUser({ roleIds: [superRoleId] })
 
     // Two super admins now, so demoting one is safe and must be permitted.
-    const updated = await usersService.updateUser(adminCtx, target.id, {
+    const updated = await usersService.updateUser(adminCtx, target.id, update({
       name: 'Managed Account',
       status: 'ACTIVE',
       roleIds: [engineerRoleId],
-    })
+    }))
 
     expect(updated.roleIds).toEqual([engineerRoleId])
     expect(backup.id).toBeTruthy()
@@ -349,11 +519,11 @@ describe('the last administrator cannot be locked out', () => {
 
     // A suspended account cannot sign in, so it is not a way back in.
     await expect(
-      usersService.updateUser(adminCtx, target.id, {
+      usersService.updateUser(adminCtx, target.id, update({
         name: 'Managed Account',
         status: 'ACTIVE',
         roleIds: [],
-      }),
+      })),
     ).rejects.toThrow(/last administrator/i)
   })
 })
@@ -415,20 +585,20 @@ describe('permissions', () => {
 
     // A rename is fine...
     await expect(
-      usersService.updateUser(editorCtx, user.id, {
+      usersService.updateUser(editorCtx, user.id, update({
         name: 'Renamed By Editor',
         status: 'ACTIVE',
         roleIds: [],
-      }),
+      })),
     ).resolves.toBeTruthy()
 
     // ...changing the status is not.
     await expect(
-      usersService.updateUser(editorCtx, user.id, {
+      usersService.updateUser(editorCtx, user.id, update({
         name: 'Renamed By Editor',
         status: 'SUSPENDED',
         roleIds: [],
-      }),
+      })),
     ).rejects.toThrow()
   })
 
