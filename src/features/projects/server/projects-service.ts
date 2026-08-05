@@ -55,7 +55,19 @@ export class ProjectsService {
         id,
         organizationId: ctx.organizationId,
         deletedAt: null,
-        ...projectFilter(ctx, PERMISSIONS.project.read, 'id'),
+        /**
+         * `AND`, not a spread. `projectFilter` returns `{ id: { in: [...] } }` for a
+         * user with project-scoped grants, and spreading that at the top level
+         * REPLACES the `id` above it — turning "this project, if permitted" into
+         * "any permitted project". `findFirstOrThrow` then returns whichever row
+         * Mongo yields first, so opening Elevate showed Apex.
+         *
+         * Invisible for a super-admin, whose filter is `{}` and collides with
+         * nothing — which is why it survived until someone held exactly two
+         * projects. deployments-service.ts documents the same trap on
+         * `visibleProject`, and the two pages that inline this already use `AND`.
+         */
+        AND: [projectFilter(ctx, PERMISSIONS.project.read, 'id')],
       },
       include: {
         memberships: { where: { deletedAt: null }, include: { user: true } },

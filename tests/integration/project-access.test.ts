@@ -162,6 +162,29 @@ describe('a user assigned to one project', () => {
     await expect(projectsService.getProject(ctx, projectB.id)).rejects.toThrow()
   })
 
+  it('returns the project that was asked for, not another it may see', async () => {
+    /**
+     * The regression: `getProject` spread `projectFilter` over its own `id`, so the
+     * `where` became `{ id: { in: [assigned…] } }` and `findFirstOrThrow` returned
+     * whichever row came first. Opening Elevate showed Apex.
+     *
+     * Two assignments are the minimum that exposes it, and a super-admin never can —
+     * their filter is `{}` and collides with nothing. So this test needs a
+     * project-scoped user holding more than one project, which is exactly the shape
+     * that had no coverage.
+     */
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
+    await membersService.assignProject(adminCtx, projectB.id, user.id)
+
+    const ctx = await ctxForUser(user.id)
+
+    for (const expected of [projectA, projectB]) {
+      const got = await projectsService.getProject(ctx, expected.id)
+      expect(got.id, `asked for ${expected.name}`).toBe(expected.id)
+    }
+  })
+
   it('is refused another project’s deployments', async () => {
     const user = await newUser([engineerRoleId])
     await membersService.assignProject(adminCtx, projectA.id, user.id)
