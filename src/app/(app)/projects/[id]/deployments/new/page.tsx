@@ -34,7 +34,11 @@ export default async function NewDeploymentPage(props: {
 }) {
   const params = await props.params
   const ctx = await getRequestContext()
-  requirePermission(ctx, PERMISSIONS.deployment.create)
+
+  /// Scoped to this project. `deployment.create` is project-scoped, so an unscoped
+  /// check consults only the global set and refuses anyone whose access comes from
+  /// a project assignment — which is everyone this page is for.
+  requirePermission(ctx, PERMISSIONS.deployment.create, { projectId: params.id })
 
   const project = await db.project.findFirst({
     where: {
@@ -75,7 +79,11 @@ export default async function NewDeploymentPage(props: {
   // only enforces the list when it is non-empty.
   const permitted = allEnvironments
     .filter((e) => project.environmentIds.length === 0 || project.environmentIds.includes(e.id))
-    .filter((e) => !e.isProduction || can(ctx, PERMISSIONS.deployment.production))
+    .filter(
+      (e) =>
+        !e.isProduction ||
+        can(ctx, PERMISSIONS.deployment.production, { projectId: params.id }),
+    )
 
   return (
     <div className="max-w-2xl space-y-6">

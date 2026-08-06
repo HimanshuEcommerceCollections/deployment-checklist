@@ -29,6 +29,7 @@ let projectB: { id: string; name: string }
 let adminCtx: RequestContext
 
 const createdUserIds: string[] = []
+const createdRunIds: string[] = []
 const createdRoleIds: string[] = []
 
 /** A context assembled exactly as the request pipeline assembles one. */
@@ -119,6 +120,8 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  await db.checklistItemState.deleteMany({ where: { deploymentId: { in: createdRunIds } } })
+  await db.deploymentRun.deleteMany({ where: { id: { in: createdRunIds } } })
   await db.membership.deleteMany({ where: { userId: { in: createdUserIds } } })
   await db.user.deleteMany({ where: { id: { in: createdUserIds } } })
   await db.role.deleteMany({ where: { id: { in: createdRoleIds } } })
@@ -229,6 +232,80 @@ describe('a user assigned to one project', () => {
 
     const visible = await projectsService.listUserProjects(await ctxForUser(user.id))
     expect(visible.map((p) => p.id).sort()).toEqual([projectA.id, projectB.id].sort())
+  })
+})
+
+describe('a project-scoped user can complete the core loop', () => {
+  /**
+   * The gap that let two bugs ship.
+   *
+   * Every earlier test used a user with one project, none, or an admin who sees
+   * everything — so nothing exercised the ordinary case of an assigned engineer
+   * actually doing the work. Both failures found in production were invisible to
+   * every one of them: `getProject` returning the wrong project needs TWO
+   * assignments, and `createDeployment` refusing outright needs a user whose
+   * permission comes from an assignment rather than the global set.
+   *
+   * This walks the loop end to end so the next one of these fails here.
+   */
+  it('opens each assigned project and creates a deployment in it', async () => {
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
+    await membersService.assignProject(adminCtx, projectB.id, user.id)
+
+    const ctx = await ctxForUser(user.id)
+
+    const version = await db.templateVersion.findFirstOrThrow({
+      where: { organizationId, status: 'PUBLISHED', deletedAt: null },
+      orderBy: { version: 'desc' },
+    })
+    const staging = await db.environment.findFirstOrThrow({
+      where: { organizationId, key: 'staging', deletedAt: null },
+    })
+
+    for (const project of [projectA, projectB]) {
+      // Right project, not merely a permitted one.
+      const opened = await projectsService.getProject(ctx, project.id)
+      expect(opened.id, `opened ${project.name}`).toBe(project.id)
+
+      // And the create path the "New Deployment" button leads to.
+      const run = await deploymentsService.createDeployment(ctx, {
+        projectId: project.id,
+        templateVersionId: version.id,
+        environmentId: staging.id,
+        version: `0.0.0-scoped-${project.id.slice(-6)}-${Date.now()}`,
+      } as never)
+
+      createdRunIds.push(run.id)
+      expect(run.projectId).toBe(project.id)
+    }
+  })
+
+  it('is still refused production without the escalation', async () => {
+    const production = await db.environment.findFirst({
+      where: { organizationId, isProduction: true, deletedAt: null },
+    })
+    if (!production) return
+
+    const user = await newUser([engineerRoleId])
+    await membersService.assignProject(adminCtx, projectA.id, user.id)
+
+    const ctx = await ctxForUser(user.id)
+    const version = await db.templateVersion.findFirstOrThrow({
+      where: { organizationId, status: 'PUBLISHED', deletedAt: null },
+      orderBy: { version: 'desc' },
+    })
+
+    /// Scoping the check must not weaken it — Engineer holds no
+    /// deployment.production, on this project or anywhere.
+    await expect(
+      deploymentsService.createDeployment(ctx, {
+        projectId: projectA.id,
+        templateVersionId: version.id,
+        environmentId: production.id,
+        version: '0.0.0-should-not-exist',
+      } as never),
+    ).rejects.toThrow()
   })
 })
 
