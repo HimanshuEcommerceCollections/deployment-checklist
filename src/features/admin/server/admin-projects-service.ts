@@ -103,7 +103,7 @@ export class AdminProjectsService {
   }
 
   async updateProject(ctx: RequestContext, id: string, input: { name: string; description?: string; color?: string; key?: string }) {
-    requirePermission(ctx, PERMISSIONS.project.edit)
+    requirePermission(ctx, PERMISSIONS.project.edit, { projectId: id })
 
     const current = await db.project.findFirstOrThrow({
       where: { id, organizationId: ctx.organizationId, deletedAt: null },
@@ -143,7 +143,7 @@ export class AdminProjectsService {
   }
 
   async deleteProject(ctx: RequestContext, id: string) {
-    requirePermission(ctx, PERMISSIONS.project.delete)
+    requirePermission(ctx, PERMISSIONS.project.delete, { projectId: id })
 
     /// Resolve inside the tenant first. `update({ where: { id } })` alone would
     /// happily soft-delete another organization's project for anyone holding
@@ -168,7 +168,7 @@ export class AdminProjectsService {
   }
 
   async restoreProject(ctx: RequestContext, id: string) {
-    requirePermission(ctx, PERMISSIONS.project.restore)
+    requirePermission(ctx, PERMISSIONS.project.restore, { projectId: id })
 
     const deleted = await db.project.findFirstOrThrow({
       where: { id, organizationId: ctx.organizationId, deletedAt: { not: null } },

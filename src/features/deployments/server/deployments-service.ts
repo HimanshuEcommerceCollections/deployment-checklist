@@ -121,7 +121,9 @@ export class DeploymentsService {
   }
 
   async createDeployment(ctx: RequestContext, input: CreateDeploymentInput) {
-    requirePermission(ctx, PERMISSIONS.deployment.create)
+    /// The project is named in the input, so the check is exact. Unscoped, it would
+    /// refuse every project-assigned user before the visibility filter below runs.
+    requirePermission(ctx, PERMISSIONS.deployment.create, { projectId: input.projectId })
 
     const project = await db.project.findFirstOrThrow({
       where: { id: input.projectId, ...visibleProject(ctx, PERMISSIONS.deployment.create) },
@@ -147,7 +149,7 @@ export class DeploymentsService {
     }
 
     if (environment.isProduction) {
-      requirePermission(ctx, PERMISSIONS.deployment.production)
+      requirePermission(ctx, PERMISSIONS.deployment.production, { projectId: project.id })
     }
 
     // Freeze the template content. Nothing in the execution path reads
