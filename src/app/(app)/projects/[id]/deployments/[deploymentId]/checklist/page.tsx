@@ -10,9 +10,13 @@ import {
 } from '@/features/deployments/checklist-snapshot'
 import { DeploymentGauge } from '@/features/deployments/components/deployment-gauge'
 import { DeploymentSectionPanel } from '@/features/deployments/components/deployment-section-panel'
+import type { ChecklistPdfData } from '@/features/deployments/components/checklist-pdf-document'
+import { ChecklistPdfButton } from '@/features/deployments/components/checklist-pdf-button'
 import { DeploymentStatusActions } from '@/features/deployments/components/deployment-status-actions'
-import { DeploymentStatusBadge } from '@/features/deployments/components/deployment-status-badge'
-import { PrintChecklistButton } from '@/features/deployments/components/print-checklist-button'
+import {
+  DeploymentStatusBadge,
+  statusLabel,
+} from '@/features/deployments/components/deployment-status-badge'
 import { deploymentsService } from '@/features/deployments/server/deployments-service'
 import { getRequestContext } from '@/server/context'
 
@@ -65,6 +69,51 @@ export default async function DeploymentChecklistPage(props: {
   const transitions = deploymentsService.availableTransitions(ctx, deployment)
 
   const heading = deployment.title || `${deployment.reference} · ${deployment.version}`
+
+  /**
+   * Everything the PDF needs, assembled server-side. Dates are formatted HERE, in
+   * the organization's timezone, so the artefact matches what the page displayed —
+   * the document component deliberately receives strings it cannot re-derive.
+   */
+  const when = (value: Date | null, by?: string | null) =>
+    value
+      ? `${new Date(value).toLocaleString('en-GB', { timeZone: ctx.timezone ?? 'UTC' })}${by ? ` by ${by}` : ''}`
+      : '—'
+
+  const pdfData: ChecklistPdfData = {
+    reference: deployment.reference,
+    title: deployment.title,
+    templateName: snapshot.templateName ?? null,
+    templateVersion: snapshot.version ?? null,
+    projectName: deployment.project.name,
+    projectKey: deployment.project.key,
+    version: deployment.version,
+    environmentName: deployment.environmentName,
+    isProduction: deployment.isProduction,
+    status: statusLabel(deployment.status),
+    gate: sealed ? 'SEALED' : gate.passes ? 'GO' : 'HOLD',
+    gateDetail: gate.passes ? `policy: ${gate.policy}` : gate.message,
+    startedLabel: when(deployment.startedAt, deployment.startedByName),
+    completedLabel: when(deployment.completedAt, deployment.completedByName),
+    progressLabel: `${checkedItems}/${totalItems} accounted for`,
+    generatedLabel: `Generated ${new Date().toLocaleString('en-GB', { timeZone: ctx.timezone ?? 'UTC' })}`,
+    sections: sections.map((section) => ({
+      title: section.title,
+      description: section.description ?? null,
+      accounted: section.accounted,
+      items: section.items.map((item) => ({
+        label: item.label,
+        helpText: item.helpText ?? null,
+        isRequired: item.isRequired,
+        checked: item.checked,
+        skipped: item.skipped,
+        note: item.note,
+        checkedLabel: item.checkedByName
+          ? `${item.checkedByName}${item.checkedAt ? ` · ${new Date(item.checkedAt).toLocaleString('en-GB', { timeZone: ctx.timezone ?? 'UTC' })}` : ''}`
+          : null,
+      })),
+    })),
+  }
 
   return (
     <div className="space-y-8">
@@ -206,7 +255,7 @@ export default async function DeploymentChecklistPage(props: {
             : `Progress saved automatically · ${checkedItems}/${totalItems} items accounted for`}
         </p>
         <div className="flex gap-2">
-          <PrintChecklistButton />
+          <ChecklistPdfButton data={pdfData} />
         </div>
       </div>
 
