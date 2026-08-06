@@ -31,7 +31,8 @@ export function OrganizationForm({ organization }: OrganizationFormProps) {
               : 'rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800'
           }
         >
-          {state.message}
+          {/* The success arm of the envelope carries data, not prose. */}
+          {state.ok ? 'Organization updated' : state.message}
         </div>
       )}
 

@@ -34,6 +34,16 @@ function check(label: string, ok: boolean, detail = '') {
   }
 }
 
+/**
+ * Rendered markup only. The raw document also carries the RSC flight payload and
+ * the inlined error/not-found boundary fallbacks, whose strings ("Not found",
+ * client-component source text) are not what the user sees — several checks
+ * below were fooled by exactly that.
+ */
+function visible(html: string): string {
+  return html.replace(/<script[\s\S]*?<\/script>/g, '')
+}
+
 /** Minimal cookie jar — enough for one session across a few requests. */
 class Jar {
   private cookies = new Map<string, string>()
@@ -192,10 +202,18 @@ async function main() {
     headers: { cookie: jar.header() },
     redirect: 'manual',
   })
+  /**
+   * Status 200, not 404 — and the not-found UI is not in the server markup either:
+   * (app)/loading.tsx makes these pages stream, so the status flushes with the
+   * loading shell and notFound() delivers its boundary through the flight stream
+   * for the client to swap in. Without executing JS, the honest assertions are
+   * that the not-found payload was sent and that nothing real leaked alongside it.
+   */
+  const envMissingHtml = await envMissing.text()
   check(
-    'unknown environment id → 404',
-    envMissing.status === 404,
-    `got ${envMissing.status}`,
+    'unknown environment id serves the not-found screen',
+    envMissingHtml.includes('This page doesn') && !visible(envMissingHtml).includes(environment.key),
+    `status ${envMissing.status}`,
   )
 
   // ── User management ──────────────────────────────────────────────────────
@@ -220,9 +238,7 @@ async function main() {
   // The Roles column did not exist before, and rendering roleIds raw is the
   // obvious way to get it wrong. Only the rendered markup is asserted — ids
   // legitimately appear in the RSC flight payload for the client components.
-  /// Strip every script block, not just up to the first one — Next puts preload
-  /// scripts in <head>, so splitting on the first would leave nothing but the head.
-  const rendered = userListHtml.replace(/<script[\s\S]*?<\/script>/g, '')
+  const rendered = visible(userListHtml)
   check(
     'user list resolves role names rather than ids',
     rendered.includes(managedRole.name) && !rendered.includes(managedRole.id),
@@ -238,11 +254,18 @@ async function main() {
     headers: { cookie: jar.header() },
     redirect: 'manual',
   })
-  const userDetailHtml = userDetail.status === 200 ? await userDetail.text() : ''
+  const userDetailHtml = userDetail.status === 200 ? visible(await userDetail.text()) : ''
   check('GET /admin/users/<id> → 200', userDetail.status === 200, `got ${userDetail.status}`)
-  check('user detail renders the access form', userDetailHtml.includes('Organization-wide roles'))
+  // The §14.9 rework split the old "Organization-wide roles" fieldset into a Roles
+  // picker and a Permissions matrix — assert the sections that exist now.
+  check(
+    'user detail renders the access card and permission matrix',
+    userDetailHtml.includes('>Access<') && userDetailHtml.includes('Permissions'),
+  )
+  check('user detail renders project assignment', userDetailHtml.includes('Project access'))
   check('user detail flags your own row', userDetailHtml.includes('You'))
   // Self-deletion is refused server-side; the UI should not offer it either.
+  // Rendered markup only — the flight payload always carries the button's source.
   check(
     'user detail withholds delete on your own account',
     !userDetailHtml.includes('Delete user'),
@@ -253,7 +276,13 @@ async function main() {
     headers: { cookie: jar.header() },
     redirect: 'manual',
   })
-  check('unknown user id → 404', unknownUser.status === 404, `got ${unknownUser.status}`)
+  // Same streaming caveat as the environment check above.
+  const unknownUserHtml = await unknownUser.text()
+  check(
+    'unknown user id serves the not-found screen',
+    unknownUserHtml.includes('This page doesn') && !visible(unknownUserHtml).includes(managed.email),
+    `status ${unknownUser.status}`,
+  )
 
   // ── Trash renders real soft-deleted rows ─────────────────────────────────
   // Soft-delete a project underneath the page rather than trusting an empty

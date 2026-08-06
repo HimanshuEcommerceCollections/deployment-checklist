@@ -2,6 +2,7 @@ import 'server-only'
 
 import { nanoid } from 'nanoid'
 
+import { NotFoundError, PreconditionFailedError, ValidationError } from '@/domain/shared/errors'
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
 import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
@@ -80,9 +81,7 @@ export class TemplateVersionsService {
     })
 
     if (version.status !== 'DRAFT') {
-      throw new Error(
-        `Version ${version.version} is ${version.status.toLowerCase()} and cannot be edited. Create a new draft instead.`,
-      )
+      throw new PreconditionFailedError('VERSION_PUBLISHED', { status: version.status })
     }
 
     return version
@@ -163,7 +162,7 @@ export class TemplateVersionsService {
 
     const existingDraft = template.versions.find((v) => v.status === 'DRAFT')
     if (existingDraft) {
-      throw new Error(
+      throw new ValidationError(
         `This template already has a draft (v${existingDraft.version}). Publish or delete it before starting another.`,
       )
     }
@@ -173,7 +172,7 @@ export class TemplateVersionsService {
       : template.versions.find((v) => v.status === 'PUBLISHED')
 
     if (input.sourceVersionId && !source) {
-      throw new Error('The version to clone was not found on this template.')
+      throw new NotFoundError('Template version')
     }
 
     // Drop soft-deleted content rather than carrying tombstones into a fresh
@@ -261,7 +260,7 @@ export class TemplateVersionsService {
 
     const draft = await this.loadDraft(ctx, templateId, versionId)
     const target = draft.sections.find((s) => s.id === sectionId && !s.deletedAt)
-    if (!target) throw new Error('Section not found')
+    if (!target) throw new NotFoundError('Section')
 
     const sections = draft.sections.map((s) =>
       s.id === sectionId ? { ...s, items: applyOrder(s.items, input.orderedIds) } : s,
@@ -288,7 +287,7 @@ export class TemplateVersionsService {
     const draft = await this.loadDraft(ctx, templateId, versionId)
 
     if (draft.itemCount === 0) {
-      throw new Error('Cannot publish a version with no checklist items.')
+      throw new PreconditionFailedError('TEMPLATE_EMPTY')
     }
 
     const version = await db.$transaction(async (tx) => {
@@ -387,7 +386,7 @@ export class TemplateVersionsService {
 
     const draft = await this.loadDraft(ctx, templateId, versionId)
     const target = draft.sections.find((s) => s.id === sectionId && !s.deletedAt)
-    if (!target) throw new Error('Section not found')
+    if (!target) throw new NotFoundError('Section')
 
     const sections = draft.sections.map((s) =>
       s.id === sectionId
@@ -422,7 +421,7 @@ export class TemplateVersionsService {
 
     const draft = await this.loadDraft(ctx, templateId, versionId)
     const target = draft.sections.find((s) => s.id === sectionId && !s.deletedAt)
-    if (!target) throw new Error('Section not found')
+    if (!target) throw new NotFoundError('Section')
 
     const deletedAt = new Date()
     const sections = draft.sections.map((s) =>
@@ -453,7 +452,7 @@ export class TemplateVersionsService {
 
     const draft = await this.loadDraft(ctx, templateId, versionId)
     const target = draft.sections.find((s) => s.id === sectionId && !s.deletedAt)
-    if (!target) throw new Error('Section not found')
+    if (!target) throw new NotFoundError('Section')
 
     const item: Item = {
       id: nanoid(),
@@ -497,7 +496,7 @@ export class TemplateVersionsService {
     const draft = await this.loadDraft(ctx, templateId, versionId)
     const section = draft.sections.find((s) => s.id === sectionId && !s.deletedAt)
     const target = section?.items.find((i) => i.id === itemId && !i.deletedAt)
-    if (!section || !target) throw new Error('Item not found')
+    if (!section || !target) throw new NotFoundError('Item')
 
     const sections = draft.sections.map((s) =>
       s.id !== sectionId
@@ -547,7 +546,7 @@ export class TemplateVersionsService {
     const draft = await this.loadDraft(ctx, templateId, versionId)
     const section = draft.sections.find((s) => s.id === sectionId && !s.deletedAt)
     const target = section?.items.find((i) => i.id === itemId && !i.deletedAt)
-    if (!section || !target) throw new Error('Item not found')
+    if (!section || !target) throw new NotFoundError('Item')
 
     const deletedAt = new Date()
     const sections = draft.sections.map((s) =>

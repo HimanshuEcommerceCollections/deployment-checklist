@@ -54,8 +54,8 @@ export function TemplateVersionsList({
       const result = await createDraftTemplateVersion(templateId, {})
       if (result.ok && result.data) {
         router.push(`/admin/templates/${templateId}/versions/${result.data.id}`)
-      } else {
-        setError(result.message ?? 'Could not create a draft version.')
+      } else if (!result.ok) {
+        setError(result.message)
       }
     })
   }

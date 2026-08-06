@@ -1,10 +1,13 @@
 'use client'
 
-import { useActionState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useActionState } from 'react'
+
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import type { ActionResult } from '@/lib/http/action-result'
+
 import { inviteUser } from '../actions/users.actions'
 
 interface Role {
@@ -17,29 +20,41 @@ interface InviteUserFormProps {
   roles: Role[]
 }
 
+type State = ActionResult<{ invitationId: string }> | null
+
 export function InviteUserForm({ roles }: InviteUserFormProps) {
   const router = useRouter()
-  const [state, , pending] = useActionState(inviteUser, null)
 
-  const handleSubmit = async (formData: FormData) => {
-    const email = formData.get('email')
-    const name = formData.get('name')
-    const selectedRoles = formData.getAll('roleIds')
+  /**
+   * One action, wired through useActionState, driving both the submit and the
+   * banner. The previous version had two disconnected halves: useActionState held
+   * a dispatch nobody called, while the form submitted through its own handler
+   * that only handled success. So `state` stayed null forever — a failed invite
+   * (duplicate address, revoked-then-reinvited, rate limit) showed NOTHING, and
+   * `pending` never went true, so the button never disabled and a double-click
+   * sent the invitation twice.
+   */
+  const [state, formAction, pending] = useActionState<State, FormData>(
+    async (_previous, formData) => {
+      const result = await inviteUser({
+        email: String(formData.get('email') ?? ''),
+        // The schema is strict and `name` optional — omit it rather than send ''.
+        name: String(formData.get('name') ?? '').trim() || undefined,
+        roleIds: formData.getAll('roleIds').map(String),
+      })
 
-    const result = await inviteUser({
-      email,
-      name: name || undefined,
-      roleIds: selectedRoles,
-    })
+      if (result.ok) {
+        router.push('/admin/users?invited=true')
+      }
 
-    if (result.ok) {
-      router.push('/admin/users?invited=true')
-    }
-  }
+      return result
+    },
+    null,
+  )
 
   return (
-    <form action={handleSubmit} className="space-y-4">
-      {!state?.ok && state && (
+    <form action={formAction} className="space-y-4">
+      {state && !state.ok && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
           {state.message}
         </div>
@@ -95,7 +110,7 @@ export function InviteUserForm({ roles }: InviteUserFormProps) {
         <Button
           type="button"
           variant="ghost"
-          onClick={() => window.history.back()}
+          onClick={() => router.back()}
           disabled={pending}
         >
           Cancel

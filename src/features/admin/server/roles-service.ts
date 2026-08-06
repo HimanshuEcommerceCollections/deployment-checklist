@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { ValidationError } from '@/domain/shared/errors'
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
 import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
@@ -9,7 +10,17 @@ import { db } from '@/lib/db/prisma'
 import type { CreateRoleInput, UpdateRoleInput } from '../schemas/roles.schema'
 
 export class RolesService {
+  /**
+   * Full role rows, permission arrays included.
+   *
+   * Guarded because this is the organization's complete authority map — who could
+   * do what — and it was reachable by any signed-in account via /admin/roles,
+   * which had no page guard either. `roleNames()` below stays open by contrast:
+   * id → display-name pairs label other pages and reveal nothing about grants.
+   */
   async listRoles(ctx: RequestContext) {
+    requirePermission(ctx, PERMISSIONS.role.read)
+
     return db.role.findMany({
       where: { organizationId: ctx.organizationId, deletedAt: null },
       orderBy: { name: 'asc' },
@@ -35,6 +46,8 @@ export class RolesService {
   }
 
   async getRole(ctx: RequestContext, id: string) {
+    requirePermission(ctx, PERMISSIONS.role.read)
+
     return db.role.findFirstOrThrow({
       where: { id, organizationId: ctx.organizationId, deletedAt: null },
     })
@@ -104,7 +117,7 @@ export class RolesService {
     const current = await this.getRole(ctx, id)
 
     if (current.isSystem) {
-      throw new Error(`"${current.name}" is a system role and cannot be deleted.`)
+      throw new ValidationError(`"${current.name}" is a system role and cannot be deleted.`)
     }
 
     /// A role still granted to someone is load-bearing. Deleting it strips those
@@ -120,7 +133,7 @@ export class RolesService {
 
     const inUse = globalGrants + projectGrants
     if (inUse > 0) {
-      throw new Error(
+      throw new ValidationError(
         `"${current.name}" is still granted to ${inUse} ${inUse === 1 ? 'account' : 'accounts'}. ` +
           'Remove those grants before deleting the role.',
       )

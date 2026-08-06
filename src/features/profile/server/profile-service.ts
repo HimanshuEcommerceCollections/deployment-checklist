@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { ValidationError } from '@/domain/shared/errors'
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
@@ -26,7 +27,7 @@ export class ProfileService {
         where: { email, id: { not: ctx.actorId } },
         select: { id: true },
       })
-      if (taken) throw new Error('That email address is already in use.')
+      if (taken) throw new ValidationError('That email address is already in use.', { email: ['Already in use'] })
     }
 
     const user = await db.user.update({
@@ -58,11 +59,11 @@ export class ProfileService {
 
     const valid = await verifyPassword(user.passwordHash, input.currentPassword)
     if (!valid) {
-      throw new Error('Your current password is incorrect.')
+      throw new ValidationError('Your current password is incorrect.', { currentPassword: ['Incorrect password'] })
     }
 
     if (await verifyPassword(user.passwordHash, input.newPassword)) {
-      throw new Error('Your new password must be different from your current one.')
+      throw new ValidationError('Your new password must be different from your current one.', { password: ['Must differ from the current password'] })
     }
 
     await db.user.update({

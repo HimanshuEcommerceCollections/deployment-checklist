@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { InternalError } from '@/domain/shared/errors'
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
 import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
@@ -60,7 +61,7 @@ async function resolveIdentifiers(
     if (!clash) return { key, slug }
   }
 
-  throw new Error(`Could not generate a unique key/slug for project "${name}"`)
+  throw new InternalError(`Could not generate a unique key/slug for project "${name}"`)
 }
 
 export class AdminProjectsService {

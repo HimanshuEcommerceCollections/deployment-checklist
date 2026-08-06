@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
+import { toActionResult } from '@/lib/http/action-result'
 import { getRequestContext } from '@/server/context'
 import { organizationService } from '../server/organization-service'
 import { UpdateOrganizationSchema } from '../schemas/organization.schema'
@@ -19,10 +20,6 @@ export async function updateOrganization(input: unknown) {
     revalidatePath('/admin/organization')
     return { ok: true as const, message: 'Organization updated', data }
   } catch (error) {
-    return {
-      ok: false as const,
-      message:
-        error instanceof Error && error.message ? error.message : 'Could not update organization',
-    }
+    return toActionResult(error, { action: 'updateOrganization' })
   }
 }

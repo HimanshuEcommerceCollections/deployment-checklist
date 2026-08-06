@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { ValidationError } from '@/domain/shared/errors'
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
 import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
@@ -24,7 +25,7 @@ export class OrganizationService {
       where: { slug: input.slug, id: { not: ctx.organizationId } },
       select: { id: true },
     })
-    if (taken) throw new Error('That slug is already taken.')
+    if (taken) throw new ValidationError('That slug is already taken.', { slug: ['Already taken'] })
 
     const org = await db.organization.update({
       where: { id: ctx.organizationId },

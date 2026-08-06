@@ -5,16 +5,66 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { Setting } from '@prisma/client'
+import type { ActionResult } from '@/lib/http/action-result'
 
 import { updateSettings } from '../actions/settings.actions'
 
+/**
+ * Exactly the columns this form edits — deliberately NOT Prisma's `Setting`.
+ * Demanding the whole row forced the page to ship every column to the client,
+ * secret refs included, just to satisfy the type.
+ */
 interface SettingsFormProps {
-  settings: Setting
+  settings: {
+    companyName: string
+    supportEmail: string | null
+    primaryColor: string
+    defaultTheme: string
+    sessionTimeoutMinutes: number
+    sessionAbsoluteHours: number
+    inviteExpiryHours: number
+    passwordMinLength: number
+    passwordRequireMixed: boolean
+    maxFailedLogins: number
+    lockoutMinutes: number
+    emailDailyCap: number
+    emailRetryLimit: number
+  }
 }
 
+type State = ActionResult<{ companyName: string }> | null
+
 export function SettingsForm({ settings }: SettingsFormProps) {
-  const [state, formAction, pending] = useActionState(updateSettings, null)
+  /**
+   * The action is wrapped, never passed to useActionState directly.
+   *
+   * React invokes the callback as `(previousState, formData)` — and the old code
+   * passed `updateSettings` itself, so the server action received the PREVIOUS
+   * STATE (null on first submit) where it expected the payload. Every save failed
+   * Zod validation on `null`, which means this form had never saved once, and
+   * every "setting" in it silently kept its old value.
+   */
+  const [state, formAction, pending] = useActionState<State, FormData>(
+    async (_previous, formData) =>
+      updateSettings({
+        companyName: String(formData.get('companyName') ?? ''),
+        supportEmail: String(formData.get('supportEmail') ?? ''),
+        primaryColor: String(formData.get('primaryColor') ?? ''),
+        defaultTheme: String(formData.get('defaultTheme') ?? 'dark'),
+        // Strings on purpose: the schema's z.coerce owns the number parsing, so
+        // client and server cannot disagree about what "42" means.
+        sessionTimeoutMinutes: formData.get('sessionTimeoutMinutes'),
+        sessionAbsoluteHours: formData.get('sessionAbsoluteHours'),
+        inviteExpiryHours: formData.get('inviteExpiryHours'),
+        passwordMinLength: formData.get('passwordMinLength'),
+        passwordRequireMixed: formData.get('passwordRequireMixed') === 'on',
+        maxFailedLogins: formData.get('maxFailedLogins'),
+        lockoutMinutes: formData.get('lockoutMinutes'),
+        emailDailyCap: formData.get('emailDailyCap'),
+        emailRetryLimit: formData.get('emailRetryLimit'),
+      }),
+    null,
+  )
 
   return (
     <form action={formAction} className="space-y-8">

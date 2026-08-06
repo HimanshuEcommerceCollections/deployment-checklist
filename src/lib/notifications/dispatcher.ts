@@ -3,6 +3,7 @@ import 'server-only'
 import type { Prisma } from '@prisma/client'
 
 import { env } from '@/lib/config/env'
+import { isUniqueViolation } from '@/lib/db/errors'
 import { db, type TxClient } from '@/lib/db/prisma'
 import { logger } from '@/lib/logger'
 
@@ -294,15 +295,6 @@ export class NotificationDispatcher {
 function truncateError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   return message.slice(0, 1_000)
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: string }).code === 'P2002'
-  )
 }
 
 export const notifications = new NotificationDispatcher()

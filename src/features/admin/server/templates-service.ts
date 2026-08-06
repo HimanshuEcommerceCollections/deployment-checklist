@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { InternalError } from '@/domain/shared/errors'
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
 import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
@@ -44,7 +45,7 @@ export class TemplatesService {
       if (!clash) return key
     }
 
-    throw new Error(`Could not generate a unique key for template "${name}"`)
+    throw new InternalError(`Could not generate a unique key for template "${name}"`)
   }
 
   async listTemplates(ctx: RequestContext) {
