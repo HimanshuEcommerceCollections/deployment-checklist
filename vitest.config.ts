@@ -5,6 +5,13 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   plugins: [tsconfigPaths()],
+  /**
+   * tsconfig says `jsx: "preserve"` because Next's compiler does the JSX
+   * transform itself — but under vitest the transform is esbuild's job, and
+   * "preserve" makes it fall back to the classic runtime, which expects a
+   * `React` global no modern file imports. Automatic matches what Next emits.
+   */
+  esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
     globals: false,
