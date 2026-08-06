@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
+import { toActionResult } from '@/lib/http/action-result'
 import { getRequestContext } from '@/server/context'
 import { templateVersionsService } from '../server/template-versions-service'
 import {
@@ -13,11 +14,16 @@ import {
   UpdateItemSchema,
 } from '../schemas/template-versions.schema'
 
-function fail(error: unknown, fallback: string) {
-  return {
-    ok: false as const,
-    message: error instanceof Error && error.message ? error.message : fallback,
-  }
+/**
+ * Failure path for every mutation here.
+ *
+ * Now that the service throws typed AppErrors, `toActionResult` keeps their
+ * messages ("This template already has a draft…") while still masking anything
+ * unrecognised — the local passthrough this replaces forwarded EVERY message,
+ * including internal ones that had no business reaching a browser.
+ */
+function fail(error: unknown, action: string) {
+  return toActionResult(error, { action })
 }
 
 /**
@@ -42,7 +48,7 @@ export async function publishTemplateVersion(templateId: string, versionId: stri
     revalidateVersion(templateId, versionId)
     return { ok: true as const, message: 'Version published', data }
   } catch (error) {
-    return fail(error, 'Could not publish version')
+    return fail(error, 'publish-version')
   }
 }
 
@@ -53,7 +59,7 @@ export async function deprecateTemplateVersion(templateId: string, versionId: st
     revalidateVersion(templateId, versionId)
     return { ok: true as const, message: 'Version deprecated', data }
   } catch (error) {
-    return fail(error, 'Could not deprecate version')
+    return fail(error, 'deprecate-version')
   }
 }
 
@@ -65,7 +71,7 @@ export async function createDraftTemplateVersion(templateId: string, input: unkn
     revalidateVersion(templateId, data.id)
     return { ok: true as const, message: `Draft v${data.version} created`, data }
   } catch (error) {
-    return fail(error, 'Could not create a draft version')
+    return fail(error, 'create-a-draft-version')
   }
 }
 
@@ -81,7 +87,7 @@ export async function reorderTemplateSections(
     revalidateVersion(templateId, versionId)
     return { ok: true as const, message: 'Sections reordered', data }
   } catch (error) {
-    return fail(error, 'Could not reorder sections')
+    return fail(error, 'reorder-sections')
   }
 }
 
@@ -104,7 +110,7 @@ export async function reorderTemplateItems(
     revalidateVersion(templateId, versionId)
     return { ok: true as const, message: 'Items reordered', data }
   } catch (error) {
-    return fail(error, 'Could not reorder items')
+    return fail(error, 'reorder-items')
   }
 }
 
@@ -120,7 +126,7 @@ export async function createTemplateSection(
     revalidateVersion(templateId, versionId)
     return { ok: true as const, message: 'Section added', data }
   } catch (error) {
-    return fail(error, 'Could not add section')
+    return fail(error, 'add-section')
   }
 }
 
@@ -143,7 +149,7 @@ export async function updateTemplateSection(
     revalidateVersion(templateId, versionId)
     return { ok: true as const, message: 'Section updated', data }
   } catch (error) {
-    return fail(error, 'Could not update section')
+    return fail(error, 'update-section')
   }
 }
 
@@ -158,7 +164,7 @@ export async function deleteTemplateSection(
     revalidateVersion(templateId, versionId)
     return { ok: true as const, message: 'Section deleted' }
   } catch (error) {
-    return fail(error, 'Could not delete section')
+    return fail(error, 'delete-section')
   }
 }
 
@@ -181,7 +187,7 @@ export async function createTemplateItem(
     revalidateVersion(templateId, versionId)
     return { ok: true as const, message: 'Item added', data }
   } catch (error) {
-    return fail(error, 'Could not add item')
+    return fail(error, 'add-item')
   }
 }
 
@@ -206,7 +212,7 @@ export async function updateTemplateItem(
     revalidateVersion(templateId, versionId)
     return { ok: true as const, message: 'Item updated', data }
   } catch (error) {
-    return fail(error, 'Could not update item')
+    return fail(error, 'update-item')
   }
 }
 
@@ -222,6 +228,6 @@ export async function deleteTemplateItem(
     revalidateVersion(templateId, versionId)
     return { ok: true as const, message: 'Item deleted' }
   } catch (error) {
-    return fail(error, 'Could not delete item')
+    return fail(error, 'delete-item')
   }
 }

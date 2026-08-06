@@ -416,7 +416,7 @@ export class UsersService {
     /// Deleting yourself locks you out with no way back in through the UI. The
     /// recovery path is `npm run grant:admin`, which nobody remembers mid-incident.
     if (userId === ctx.actorId) {
-      throw new Error('You cannot delete your own account.')
+      throw new ValidationError('You cannot delete your own account.')
     }
 
     /// Deleting the last administrator is the same lockout by a different route,

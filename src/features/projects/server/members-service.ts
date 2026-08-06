@@ -1,9 +1,11 @@
 import 'server-only'
 
+import { ValidationError } from '@/domain/shared/errors'
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
 import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
+import { isUniqueViolation } from '@/lib/db/errors'
 import { db } from '@/lib/db/prisma'
 
 /**
@@ -105,20 +107,40 @@ export class MembersService {
       return { userId: user.id, projectId: project.id, created: false }
     }
 
+    /**
+     * `createdById` is an ObjectId column, and a system context's actorId is the
+     * literal string "system" — writing it throws P2023 (Malformed ObjectID).
+     * Attribution for non-user actors lives in the audit entry below instead.
+     */
+    const createdById = ctx.actorType === 'user' ? ctx.actorId : null
+
     if (existing) {
       await db.membership.update({
         where: { id: existing.id },
-        data: { deletedAt: null, createdById: ctx.actorId },
+        data: { deletedAt: null, createdById },
       })
     } else {
-      await db.membership.create({
-        data: {
-          organizationId: ctx.organizationId,
-          projectId: project.id,
-          userId: user.id,
-          createdById: ctx.actorId,
-        },
-      })
+      try {
+        await db.membership.create({
+          data: {
+            organizationId: ctx.organizationId,
+            projectId: project.id,
+            userId: user.id,
+            createdById,
+          },
+        })
+      } catch (error) {
+        /**
+         * Two admins assigning the same person at the same moment: both probes see
+         * nothing, one create wins, the other lands here on the unique index. The
+         * outcome they both wanted exists, so this is the idempotent no-op — not an
+         * error to surface.
+         */
+        if (isUniqueViolation(error)) {
+          return { userId: user.id, projectId: project.id, created: false }
+        }
+        throw error
+      }
     }
 
     await audit.record(db, ctx, AUDIT_ACTIONS.project.memberAdded, {
@@ -148,7 +170,7 @@ export class MembersService {
     })
 
     if (count === 0) {
-      throw new Error(`${user.name} is not assigned to ${project.key}.`)
+      throw new ValidationError(`${user.name} is not assigned to ${project.key}.`)
     }
 
     await audit.record(db, ctx, AUDIT_ACTIONS.project.memberRemoved, {

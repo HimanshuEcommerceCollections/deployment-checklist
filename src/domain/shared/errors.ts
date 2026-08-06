@@ -28,6 +28,26 @@ export abstract class AppError extends Error {
     this.name = new.target.name
     this.details = details
   }
+
+  /**
+   * In production, Next.js strips the message from a server-side error before it
+   * reaches an `error.tsx` boundary — but forwards `digest` untouched when the
+   * error already carries one (its own control flow works the same way:
+   * `NEXT_REDIRECT;push;/login`). Encoding the code here is what lets the boundary
+   * say "you don't have access to this page" for a ForbiddenError instead of the
+   * generic crash screen.
+   *
+   * A getter, not a field set in the constructor: `code` belongs to the subclass
+   * and is not assigned until after `super()` returns, so a constructor-time copy
+   * would read `undefined`.
+   *
+   * If a future Next version stops forwarding pre-set digests, boundaries degrade
+   * to the generic screen — they must always treat this as a hint, never parse it
+   * as a guarantee.
+   */
+  get digest(): string {
+    return `APP_ERROR;${this.code}`
+  }
 }
 
 export class UnauthenticatedError extends AppError {

@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { ValidationError } from '@/domain/shared/errors'
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
 import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
@@ -99,7 +100,7 @@ export class EnvironmentsService {
     })
 
     if (inUse > 0) {
-      throw new Error(
+      throw new ValidationError(
         `This environment is used by ${inUse} deployment${inUse === 1 ? '' : 's'} and cannot be deleted.`,
       )
     }
@@ -140,7 +141,7 @@ export class EnvironmentsService {
     })
 
     if (clash) {
-      throw new Error(
+      throw new ValidationError(
         `An active environment already uses the key "${deleted.key}". Rename it before restoring this one.`,
       )
     }

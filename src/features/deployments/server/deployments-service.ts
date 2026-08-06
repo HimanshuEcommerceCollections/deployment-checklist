@@ -10,7 +10,7 @@ import {
   formatDuration,
   isEditable,
 } from '@/domain/deployments/lifecycle'
-import { PreconditionFailedError } from '@/domain/shared/errors'
+import { ConflictError, PreconditionFailedError, ValidationError } from '@/domain/shared/errors'
 import { type AuditAction, AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
 import {
@@ -145,7 +145,7 @@ export class DeploymentsService {
     })
 
     if (project.environmentIds.length > 0 && !project.environmentIds.includes(environment.id)) {
-      throw new Error(`${project.key} is not allowed to deploy to ${environment.name}.`)
+      throw new ValidationError(`${project.key} is not allowed to deploy to ${environment.name}.`)
     }
 
     if (environment.isProduction) {
@@ -186,7 +186,7 @@ export class DeploymentsService {
     const flatItems = liveSections.flatMap((s) => s.items.map((i) => ({ ...i, sectionId: s.id })))
 
     if (flatItems.length === 0) {
-      throw new Error('The selected template version has no items for this environment.')
+      throw new ValidationError('The selected template version has no items for this environment.')
     }
 
     // Sequence is per project and must be unique — derive it from the current max
@@ -287,7 +287,9 @@ export class DeploymentsService {
     })
 
     if (input.revision !== undefined && input.revision !== current.revision) {
-      throw new Error('This item was changed by someone else. Reload and try again.')
+      /// ConflictError, so the message survives toActionResult - a plain Error is
+      /// masked to "Something went wrong", which told the person mid-release nothing.
+      throw new ConflictError('STALE_REVISION', { revision: current.revision })
     }
 
     const snapshotItem = deployment.checklist.sections
@@ -297,53 +299,69 @@ export class DeploymentsService {
     if (input.checked && snapshotItem?.evidenceRequired) {
       const note = input.note ?? current.note
       if (!note) {
-        throw new Error(`"${snapshotItem.label}" requires a note as evidence.`)
+        throw new PreconditionFailedError('EVIDENCE_REQUIRED', { itemId, label: snapshotItem.label })
       }
     }
 
-    const item = await db.checklistItemState.update({
-      where: { id: current.id },
-      data: {
-        checked: input.checked,
-        skipped: input.skipped,
-        note: input.note ?? current.note,
-        checkedById: input.checked ? ctx.actorId : null,
-        checkedByName: input.checked ? ctx.actorName : null,
-        checkedAt: input.checked ? new Date() : null,
-        revision: { increment: 1 },
-        toggleCount: { increment: 1 },
-      },
-    })
-
-    // Counters are denormalised on DeploymentRun so lists never aggregate.
-    const [completedItems, completedRequired] = await Promise.all([
-      db.checklistItemState.count({
-        where: { deploymentId: deployment.id, OR: [{ checked: true }, { skipped: true }] },
-      }),
-      db.checklistItemState.count({
-        where: {
-          deploymentId: deployment.id,
-          isRequired: true,
-          OR: [{ checked: true }, { skipped: true }],
+    /**
+     * One transaction for the tick, the recount and the counters.
+     *
+     * These were three separate writes. Two people ticking simultaneously could
+     * both recount before the other's item write committed, and whichever counter
+     * update landed last persisted an off-by-one — the readiness gate reads these
+     * counters, so a run with every required item ticked could still refuse to
+     * complete until the next toggle healed it. Counting inside the transaction
+     * pins each recount to a state that includes its own write.
+     */
+    const item = await db.$transaction(async (tx) => {
+      const updated = await tx.checklistItemState.update({
+        where: { id: current.id },
+        data: {
+          checked: input.checked,
+          skipped: input.skipped,
+          note: input.note ?? current.note,
+          checkedById: input.checked ? ctx.actorId : null,
+          checkedByName: input.checked ? ctx.actorName : null,
+          checkedAt: input.checked ? new Date() : null,
+          revision: { increment: 1 },
+          toggleCount: { increment: 1 },
         },
-      }),
-    ])
+      })
 
-    await db.deploymentRun.update({
-      where: { id: deployment.id },
-      data: { completedItems, completedRequired, updatedById: ctx.actorId },
+      // Counters are denormalised on DeploymentRun so lists never aggregate.
+      const [completedItems, completedRequired] = await Promise.all([
+        tx.checklistItemState.count({
+          where: { deploymentId: deployment.id, OR: [{ checked: true }, { skipped: true }] },
+        }),
+        tx.checklistItemState.count({
+          where: {
+            deploymentId: deployment.id,
+            isRequired: true,
+            OR: [{ checked: true }, { skipped: true }],
+          },
+        }),
+      ])
+
+      await tx.deploymentRun.update({
+        where: { id: deployment.id },
+        data: { completedItems, completedRequired, updatedById: ctx.actorId },
+      })
+
+      await audit.record(
+        tx,
+        ctx,
+        input.checked
+          ? AUDIT_ACTIONS.deployment.itemChecked
+          : AUDIT_ACTIONS.deployment.itemUnchecked,
+        {
+          entityType: 'ChecklistItemState',
+          entityId: updated.id,
+          entityLabel: snapshotItem?.label ?? itemId,
+        },
+      )
+
+      return updated
     })
-
-    await audit.record(
-      db,
-      ctx,
-      input.checked ? AUDIT_ACTIONS.deployment.itemChecked : AUDIT_ACTIONS.deployment.itemUnchecked,
-      {
-        entityType: 'ChecklistItemState',
-        entityId: item.id,
-        entityLabel: snapshotItem?.label ?? itemId,
-      },
-    )
 
     return item
   }
