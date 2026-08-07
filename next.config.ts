@@ -12,12 +12,18 @@ const contentSecurityPolicy = [
   "default-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   // 'unsafe-eval' is required by React's dev refresh runtime only.
+  // 'wasm-unsafe-eval' permits WebAssembly compilation and nothing else — no JS
+  // eval. The PDF export runs yoga-layout (react-pdf's layout engine), which is
+  // WASM; without this, Save PDF dies with a CompileError in production while
+  // working in dev, where 'unsafe-eval' happens to cover WASM too.
   process.env.NODE_ENV === 'development'
-    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-    : "script-src 'self' 'unsafe-inline'",
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'"
+    : "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  // data: because yoga-layout fetches its WASM binary from a data: URI. A data:
+  // fetch cannot reach the network, so this widens nothing.
+  "connect-src 'self' data:",
   "frame-ancestors 'none'",
   "form-action 'self'",
   "base-uri 'self'",
