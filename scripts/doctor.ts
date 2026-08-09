@@ -113,6 +113,7 @@ async function main() {
       'organizations', 'environments', 'users', 'roles', 'memberships',
       'projects', 'checklist_templates', 'template_versions',
       'project_templates', 'deployment_runs', 'deployment_comments',
+      'api_keys', 'integrations',
     ]
     const broken: string[] = []
 
