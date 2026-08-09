@@ -37,6 +37,13 @@ import {
 /** The root client or a transaction client, narrowed to the outbox model. */
 type OutboxWriter = Pick<TxClient, 'notificationOutbox'>
 
+/**
+ * How long a SENDING lock may be held before another drain reclaims it. Longer
+ * than any legitimate send (the cron caps at 60s, one SMTP send can take ~40s),
+ * short enough that a crash-stranded row recovers within a couple of cron ticks.
+ */
+const STALE_LOCK_MS = 5 * 60 * 1000
+
 export class NotificationDispatcher {
   /**
    * Queue a notification. Does NOT send.
@@ -94,10 +101,22 @@ export class NotificationDispatcher {
     const now = options.now ?? new Date()
     const workerId = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`
 
+    /**
+     * A row is claimed by flipping it to SENDING before delivery. If the worker
+     * then dies (a Vercel invocation timeout mid-batch is the realistic case —
+     * one slow SMTP send can exceed the 60s cap), the row is stranded in SENDING:
+     * drain only looked at PENDING/FAILED and the admin retry only accepts
+     * FAILED/DEAD, so nothing ever picked it up again. Reclaim a SENDING row whose
+     * lock is older than this threshold — comfortably past any legitimate send.
+     */
+    const staleLock = new Date(now.getTime() - STALE_LOCK_MS)
+
     const due = await db.notificationOutbox.findMany({
       where: {
-        status: { in: ['PENDING', 'FAILED'] },
-        nextAttemptAt: { lte: now },
+        OR: [
+          { status: { in: ['PENDING', 'FAILED'] }, nextAttemptAt: { lte: now } },
+          { status: 'SENDING', lockedAt: { lte: staleLock } },
+        ],
       },
       orderBy: { nextAttemptAt: 'asc' },
       take: batchSize,
@@ -107,11 +126,18 @@ export class NotificationDispatcher {
     if (due.length === 0) return { claimed: 0, sent: 0, failed: 0, dead: 0 }
 
     // Claim each row conditionally. `count === 0` means another worker got it
-    // first, so we skip rather than double-send.
+    // first (or already reclaimed a stale lock, moving lockedAt to now), so we
+    // skip rather than double-send.
     const claimedIds: string[] = []
     for (const row of due) {
       const { count } = await db.notificationOutbox.updateMany({
-        where: { id: row.id, status: { in: ['PENDING', 'FAILED'] } },
+        where: {
+          id: row.id,
+          OR: [
+            { status: { in: ['PENDING', 'FAILED'] } },
+            { status: 'SENDING', lockedAt: { lte: staleLock } },
+          ],
+        },
         data: { status: 'SENDING', lockedAt: now, lockedBy: workerId, attempts: { increment: 1 } },
       })
       if (count > 0) claimedIds.push(row.id)
@@ -190,24 +216,19 @@ export class NotificationDispatcher {
 
     const config = emailConfigFromSettings(settings)
 
-    // Off by EMAIL_ENABLED (deployment) or Setting.emailEnabled (admin). Closed
-    // out rather than left queued: retrying a row that is disabled by
-    // configuration would spin until it dead-lettered, and the queue would fill
-    // with noise that looks like a provider outage.
-    //
-    // Note the ordering — enqueue() still ran inside the caller's transaction, so
-    // the row exists, records the reason, and can be retried the moment a real
-    // provider is configured. Nothing is lost by having email switched off.
+    // Off by EMAIL_ENABLED (deployment) or Setting.emailEnabled (admin). Parked
+    // as DEAD rather than SENT: it was never delivered, so marking it SENT was a
+    // lie that also made it unrecoverable — the 30-day TTL prunes SENT rows and
+    // the admin retry refuses them, so a notification queued during a disabled
+    // window was silently lost. DEAD is not delivered, not pruned, and the retry
+    // route accepts it — so the moment a provider is configured, an admin can
+    // replay it. It is thrown as a non-retryable error so the standard drain path
+    // records it, rather than being closed out here as success.
     if (!config.enabled) {
-      const reason = describeEmailDisabled(settings)
-
-      await db.notificationOutbox.update({
-        where: { id: row.id },
-        data: { status: 'SENT', sentAt: new Date(), provider: 'disabled', lastError: reason },
+      throw new EmailDeliveryError(describeEmailDisabled(settings), {
+        retryable: false,
+        provider: 'disabled',
       })
-
-      logger.debug({ outboxId: row.id, templateKey: row.templateKey }, reason)
-      return
     }
 
     if (row.toAddresses.length === 0) {

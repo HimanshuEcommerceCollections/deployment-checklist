@@ -17,6 +17,11 @@ export async function listIntegrations() {
   return integrationsService.listIntegrations(ctx)
 }
 
+export async function getIntegration(id: string) {
+  const ctx = await getRequestContext()
+  return integrationsService.getIntegration(ctx, id)
+}
+
 export async function createIntegration(input: unknown) {
   try {
     const ctx = await getRequestContext()

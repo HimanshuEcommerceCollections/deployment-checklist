@@ -22,5 +22,14 @@ export const UpdateSettingsSchema = z
     emailRetryLimit: z.coerce.number().int().min(1).max(20),
   })
   .strict()
+  /**
+   * The idle timeout cannot exceed the absolute session lifetime — an idle window
+   * longer than the hard cap is self-contradictory (the absolute cap always wins,
+   * so the larger idle value is silently meaningless). Reject it at the form.
+   */
+  .refine((input) => input.sessionTimeoutMinutes <= input.sessionAbsoluteHours * 60, {
+    message: 'Idle timeout cannot be longer than the absolute session lifetime',
+    path: ['sessionTimeoutMinutes'],
+  })
 
 export type UpdateSettingsInput = z.infer<typeof UpdateSettingsSchema>

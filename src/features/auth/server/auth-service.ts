@@ -158,7 +158,15 @@ export class AuthService {
 
     if (!user) return 'INVALID_CREDENTIALS'
     if (user.status === 'INVITED') return 'PENDING_INVITE'
-    if (user.lockedUntil && user.lockedUntil > new Date()) return 'LOCKED'
+    /**
+     * Deliberately NOT reporting a locked account. Only accounts that exist ever
+     * lock (a nonexistent email never reaches registerFailure), so a distinct
+     * "too many attempts" message told an attacker precisely which addresses are
+     * real — the enumeration this method's generic default exists to prevent. The
+     * account still locks server-side; it just fails identically to a wrong
+     * password. PENDING_INVITE stays because an un-set-up account cannot be signed
+     * into regardless, so the hint helps the user without helping an attacker.
+     */
     if (user.status !== 'ACTIVE') return 'INACTIVE'
     return 'INVALID_CREDENTIALS'
   }

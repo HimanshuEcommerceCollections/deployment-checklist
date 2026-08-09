@@ -1,6 +1,7 @@
 import { listApiKeys } from '@/features/admin/actions/api-keys.actions'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { RevokeApiKeyButton } from '@/features/admin/components/revoke-api-key-button'
 import {
   Table,
   TableBody,
@@ -45,7 +46,7 @@ export default async function ApiKeysPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {keys.map((key: any) => (
+              {keys.map((key) => (
                 <TableRow key={key.id}>
                   <TableCell className="font-medium">{key.name}</TableCell>
                   <TableCell className="font-mono text-sm">{key.prefix}...</TableCell>
@@ -83,11 +84,11 @@ export default async function ApiKeysPage() {
                       : 'Never'}
                   </TableCell>
                   <TableCell>
-                    <form action={`/api/admin/api-keys/${key.id}/revoke`} method="POST">
-                      <Button type="submit" variant="ghost" size="sm">
-                        Revoke
-                      </Button>
-                    </form>
+                    {key.revokedAt ? (
+                      <Badge variant="secondary">Revoked</Badge>
+                    ) : (
+                      <RevokeApiKeyButton keyId={key.id} name={key.name} />
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

@@ -611,6 +611,84 @@ describe('permissions', () => {
 
     await expect(usersService.listUsers(nobodyCtx)).rejects.toThrow()
   })
+
+  /**
+   * Privilege-escalation guard on the edit door. `user.edit` must not be a path
+   * to granting authority the actor does not hold — via a role or directly.
+   */
+  it('refuses to grant a role whose permissions the actor does not hold', async () => {
+    const user = await newUser()
+
+    // Holds user.edit but nothing like the super-admin/Admin bundle.
+    const editorCtx: RequestContext = {
+      ...adminCtx,
+      roleKeys: ['editor-only'],
+      permissions: {
+        global: new Set(['user.read', 'user.edit']),
+        byProject: new Map(),
+        isSuperAdmin: false,
+      },
+    }
+
+    await expect(
+      usersService.updateUser(
+        editorCtx,
+        user.id,
+        update({ name: 'Escalation Attempt', status: 'ACTIVE', roleIds: [superRoleId] }),
+      ),
+    ).rejects.toThrow(/permissions you do not hold/i)
+  })
+
+  it('refuses to add an extra permission the actor does not hold', async () => {
+    const user = await newUser()
+
+    const editorCtx: RequestContext = {
+      ...adminCtx,
+      roleKeys: ['editor-only'],
+      permissions: {
+        global: new Set(['user.read', 'user.edit']),
+        byProject: new Map(),
+        isSuperAdmin: false,
+      },
+    }
+
+    await expect(
+      usersService.updateUser(
+        editorCtx,
+        user.id,
+        update({
+          name: 'Escalation Attempt',
+          status: 'ACTIVE',
+          roleIds: [],
+          extraPermissions: [PERMISSIONS.settings.manage],
+        }),
+      ),
+    ).rejects.toThrow(/permissions you do not hold/i)
+  })
+
+  it('lets an actor grant only what they themselves hold', async () => {
+    const user = await newUser()
+
+    // This actor holds exactly the permissions Engineer grants, so assigning
+    // Engineer is within their authority and must be allowed.
+    const engineer = SEED_ROLES.find((r) => r.key === 'engineer')!
+    const capableCtx: RequestContext = {
+      ...adminCtx,
+      roleKeys: ['capable'],
+      permissions: {
+        global: new Set<string>(['user.read', 'user.edit', ...engineer.permissions]),
+        byProject: new Map(),
+        isSuperAdmin: false,
+      },
+    }
+
+    const updated = await usersService.updateUser(
+      capableCtx,
+      user.id,
+      update({ name: 'Within Authority', status: 'ACTIVE', roleIds: [engineerRoleId] }),
+    )
+    expect(updated.roleIds).toEqual([engineerRoleId])
+  })
 })
 
 describe('invitations from a user row', () => {

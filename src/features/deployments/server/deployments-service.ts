@@ -23,6 +23,7 @@ import {
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { env } from '@/lib/config/env'
 import { db } from '@/lib/db/prisma'
+import { isUniqueViolation } from '@/lib/db/errors'
 import { notifications } from '@/lib/notifications/dispatcher'
 import type { NotificationTemplateKey } from '@/lib/notifications/types'
 
@@ -189,70 +190,94 @@ export class DeploymentsService {
       throw new ValidationError('The selected template version has no items for this environment.')
     }
 
-    // Sequence is per project and must be unique — derive it from the current max
-    // rather than a count, so soft-deleted runs cannot cause a collision.
-    const latest = await db.deploymentRun.findFirst({
-      where: { projectId: project.id },
-      select: { sequence: true },
-      orderBy: { sequence: 'desc' },
-    })
-    const sequence = (latest?.sequence ?? 0) + 1
+    /**
+     * The run, its item states and the audit row are written together, so a
+     * failure between them cannot leave a run with zero `ChecklistItemState`
+     * rows — a run that renders but whose every tick throws, and which can never
+     * reach its gate. Previously these were three separate writes.
+     *
+     * The sequence is derived from the max under a retry, because that read and
+     * the create are not atomic: two concurrent creates in one project compute
+     * the same sequence and the `@@unique([projectId, sequence])` index rejects
+     * the loser. Rather than surface that as a generic error, recompute and retry.
+     * `deletedAt: undefined` opts the max query OUT of the soft-delete filter, so
+     * it spans every run the unique index spans — otherwise deleting the newest
+     * run (once run-trash exists) would make the next create collide forever.
+     */
+    const MAX_ATTEMPTS = 5
+    for (let attempt = 1; ; attempt++) {
+      const latest = await db.deploymentRun.findFirst({
+        where: { projectId: project.id, deletedAt: undefined },
+        select: { sequence: true },
+        orderBy: { sequence: 'desc' },
+      })
+      const sequence = (latest?.sequence ?? 0) + 1
 
-    const deployment = await db.deploymentRun.create({
-      data: {
-        organizationId: ctx.organizationId,
-        projectId: project.id,
-        reference: `${project.key}-${sequence}`,
-        sequence,
-        templateId: version.template.id,
-        templateVersionId: version.id,
-        checklist: {
-          templateId: version.template.id,
-          templateVersionId: version.id,
-          templateKey: version.template.key,
-          templateName: version.template.name,
-          version: version.version,
-          completionPolicy: version.completionPolicy,
-          capturedAt: new Date(),
-          sections: liveSections,
-        },
-        environmentId: environment.id,
-        environmentKey: environment.key,
-        environmentName: environment.name,
-        isProduction: environment.isProduction,
-        version: input.version,
-        title: input.title || null,
-        releaseNotes: input.releaseNotes || null,
-        scheduledAt: input.scheduledAt || null,
-        status: 'DRAFT',
-        totalItems: flatItems.length,
-        totalRequired: flatItems.filter((i) => i.isRequired).length,
-        searchText: [input.version, input.title, project.key, environment.name]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase(),
-        createdById: ctx.actorId,
-      },
-    })
+      try {
+        return await db.$transaction(async (tx) => {
+          const deployment = await tx.deploymentRun.create({
+            data: {
+              organizationId: ctx.organizationId,
+              projectId: project.id,
+              reference: `${project.key}-${sequence}`,
+              sequence,
+              templateId: version.template.id,
+              templateVersionId: version.id,
+              checklist: {
+                templateId: version.template.id,
+                templateVersionId: version.id,
+                templateKey: version.template.key,
+                templateName: version.template.name,
+                version: version.version,
+                completionPolicy: version.completionPolicy,
+                capturedAt: new Date(),
+                sections: liveSections,
+              },
+              environmentId: environment.id,
+              environmentKey: environment.key,
+              environmentName: environment.name,
+              isProduction: environment.isProduction,
+              version: input.version,
+              title: input.title || null,
+              releaseNotes: input.releaseNotes || null,
+              scheduledAt: input.scheduledAt || null,
+              status: 'DRAFT',
+              totalItems: flatItems.length,
+              totalRequired: flatItems.filter((i) => i.isRequired).length,
+              searchText: [input.version, input.title, project.key, environment.name]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase(),
+              createdById: ctx.actorId,
+            },
+          })
 
-    await db.checklistItemState.createMany({
-      data: flatItems.map((i) => ({
-        organizationId: ctx.organizationId,
-        deploymentId: deployment.id,
-        sectionId: i.sectionId,
-        itemId: i.id,
-        order: i.order,
-        isRequired: i.isRequired,
-      })),
-    })
+          await tx.checklistItemState.createMany({
+            data: flatItems.map((i) => ({
+              organizationId: ctx.organizationId,
+              deploymentId: deployment.id,
+              sectionId: i.sectionId,
+              itemId: i.id,
+              order: i.order,
+              isRequired: i.isRequired,
+            })),
+          })
 
-    await audit.record(db, ctx, AUDIT_ACTIONS.deployment.created, {
-      entityType: 'DeploymentRun',
-      entityId: deployment.id,
-      entityLabel: deployment.reference,
-    })
+          await audit.record(tx, ctx, AUDIT_ACTIONS.deployment.created, {
+            entityType: 'DeploymentRun',
+            entityId: deployment.id,
+            entityLabel: deployment.reference,
+          })
 
-    return deployment
+          return deployment
+        })
+      } catch (error) {
+        // A lost sequence race — recompute and try again. Any other error, or
+        // exhausting the attempts, propagates.
+        if (isUniqueViolation(error) && attempt < MAX_ATTEMPTS) continue
+        throw error
+      }
+    }
   }
 
   async updateDeploymentItem(
@@ -314,18 +339,39 @@ export class DeploymentsService {
      * pins each recount to a state that includes its own write.
      */
     const item = await db.$transaction(async (tx) => {
-      const updated = await tx.checklistItemState.update({
+      const data = {
+        checked: input.checked,
+        skipped: input.skipped,
+        note: input.note ?? current.note,
+        checkedById: input.checked ? ctx.actorId : null,
+        checkedByName: input.checked ? ctx.actorName : null,
+        checkedAt: input.checked ? new Date() : null,
+        revision: { increment: 1 },
+        toggleCount: { increment: 1 },
+      }
+
+      /**
+       * Compare-and-set on the revision, so the guard is atomic rather than a
+       * check that a racing writer can slip between. The earlier read-and-compare
+       * only narrows the window; keying the write on the revision the caller read
+       * closes it — a second writer who read the same revision matches zero rows
+       * and the transaction rolls back with STALE_REVISION instead of silently
+       * clobbering the first write's tick and attribution.
+       */
+      if (input.revision !== undefined) {
+        const res = await tx.checklistItemState.updateMany({
+          where: { id: current.id, revision: input.revision },
+          data,
+        })
+        if (res.count === 0) {
+          throw new ConflictError('STALE_REVISION', { revision: current.revision })
+        }
+      } else {
+        await tx.checklistItemState.update({ where: { id: current.id }, data })
+      }
+
+      const updated = await tx.checklistItemState.findUniqueOrThrow({
         where: { id: current.id },
-        data: {
-          checked: input.checked,
-          skipped: input.skipped,
-          note: input.note ?? current.note,
-          checkedById: input.checked ? ctx.actorId : null,
-          checkedByName: input.checked ? ctx.actorName : null,
-          checkedAt: input.checked ? new Date() : null,
-          revision: { increment: 1 },
-          toggleCount: { increment: 1 },
-        },
       })
 
       // Counters are denormalised on DeploymentRun so lists never aggregate.

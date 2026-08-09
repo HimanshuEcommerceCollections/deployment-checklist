@@ -330,8 +330,30 @@ export class TemplateVersionsService {
   async deprecateVersion(ctx: RequestContext, templateId: string, versionId: string) {
     requirePermission(ctx, PERMISSIONS.template.deprecate)
 
+    /**
+     * Load the version scoped through its template's organization first — every
+     * sibling method does this, and this one did not: it updated by raw id, so a
+     * `template.deprecate` holder in one organization could deprecate another
+     * organization's published version. Only a PUBLISHED version can be
+     * deprecated; deprecating a DRAFT would strand it (loadDraft requires DRAFT,
+     * so it could never be edited or published again).
+     */
+    const current = await db.templateVersion.findFirst({
+      where: {
+        id: versionId,
+        templateId,
+        deletedAt: null,
+        template: { organizationId: ctx.organizationId, deletedAt: null },
+      },
+      select: { id: true, status: true },
+    })
+    if (!current) throw new NotFoundError('TemplateVersion', versionId)
+    if (current.status !== 'PUBLISHED') {
+      throw new PreconditionFailedError('NOT_PUBLISHED', { status: current.status })
+    }
+
     const version = await db.templateVersion.update({
-      where: { id: versionId },
+      where: { id: current.id },
       data: { status: 'DEPRECATED', deprecatedAt: new Date(), updatedById: ctx.actorId },
     })
 

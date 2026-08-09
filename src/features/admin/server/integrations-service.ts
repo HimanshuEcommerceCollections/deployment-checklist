@@ -2,6 +2,7 @@ import 'server-only'
 
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
+import { NotFoundError } from '@/domain/shared/errors'
 import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { db } from '@/lib/db/prisma'
@@ -9,6 +10,21 @@ import { db } from '@/lib/db/prisma'
 import type { CreateIntegrationInput, UpdateIntegrationInput } from '../schemas/integrations.schema'
 
 export class IntegrationsService {
+  /**
+   * Resolve inside the tenant before any write. `update({ where: { id } })`
+   * checks only the id and neither extension narrows a unique-id write, so
+   * without this an admin could edit or delete another organization's
+   * integration by id — the scoped-read pattern the rest of the codebase uses.
+   */
+  private async assertInTenant(ctx: RequestContext, id: string) {
+    const existing = await db.integration.findFirst({
+      where: { id, organizationId: ctx.organizationId, deletedAt: null },
+      select: { id: true },
+    })
+    if (!existing) throw new NotFoundError('Integration', id)
+    return existing
+  }
+
   async listIntegrations(ctx: RequestContext) {
     requirePermission(ctx, PERMISSIONS.admin.access)
 
@@ -29,6 +45,16 @@ export class IntegrationsService {
         updatedAt: true,
       },
       orderBy: { createdAt: 'desc' },
+    })
+  }
+
+  async getIntegration(ctx: RequestContext, id: string) {
+    requirePermission(ctx, PERMISSIONS.admin.access)
+
+    /// secretRef stays server-side; the editable surface is type/name/config/enabled.
+    return db.integration.findFirst({
+      where: { id, organizationId: ctx.organizationId, deletedAt: null },
+      select: { id: true, type: true, name: true, config: true, enabled: true },
     })
   }
 
@@ -57,6 +83,7 @@ export class IntegrationsService {
 
   async updateIntegration(ctx: RequestContext, id: string, input: UpdateIntegrationInput) {
     requirePermission(ctx, PERMISSIONS.admin.access)
+    await this.assertInTenant(ctx, id)
 
     const integration = await db.integration.update({
       where: { id },
@@ -80,6 +107,7 @@ export class IntegrationsService {
 
   async deleteIntegration(ctx: RequestContext, id: string) {
     requirePermission(ctx, PERMISSIONS.admin.access)
+    await this.assertInTenant(ctx, id)
 
     const integration = await db.integration.update({
       where: { id },

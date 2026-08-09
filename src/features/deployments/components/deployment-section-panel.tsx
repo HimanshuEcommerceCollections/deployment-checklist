@@ -12,11 +12,15 @@ export interface ChecklistItem {
   label: string
   helpText?: string | null
   isRequired: boolean
+  /** Requires a note before it can be checked — the server refuses otherwise. */
+  evidenceRequired?: boolean
   checked: boolean
   skipped?: boolean
   note?: string | null
   checkedByName?: string | null
   checkedAt?: Date | string | null
+  /** Optimistic-concurrency counter the toggle asserts on. */
+  revision?: number
 }
 
 interface DeploymentSectionPanelProps {
@@ -55,12 +59,27 @@ export function DeploymentSectionPanel({
    */
   const [optimistic, setOptimistic] = useState<Record<string, boolean>>({})
 
+  /**
+   * Draft note text per item, for evidence-required items. Seeded lazily from the
+   * saved note on first edit so an existing note is not wiped when the box opens.
+   */
+  const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
+
   const isChecked = (item: ChecklistItem) => optimistic[item.id] ?? item.checked
+  const draftFor = (item: ChecklistItem) => noteDraft[item.id] ?? item.note ?? ''
 
   const checkedCount = items.filter((item) => isChecked(item) || item.skipped).length
   const progressPercent = items.length > 0 ? (checkedCount / items.length) * 100 : 0
 
   const handleToggle = async (item: ChecklistItem, checked: boolean) => {
+    // Evidence-required items cannot be ticked without a note — the server
+    // enforces this, so catch it here rather than letting the tick bounce back.
+    const note = draftFor(item).trim()
+    if (checked && item.evidenceRequired && !note) {
+      setError(`"${item.label}" needs a note before it can be checked.`)
+      return
+    }
+
     setPendingId(item.id)
     setError(null)
     setOptimistic((prev) => ({ ...prev, [item.id]: checked }))
@@ -69,13 +88,22 @@ export function DeploymentSectionPanel({
       const result = await updateDeploymentItem(deploymentId, item.id, {
         checked,
         skipped: false,
+        // Only send a note when there is one — an empty string would overwrite a
+        // note left by someone else when merely un-ticking an item.
+        ...(note ? { note } : {}),
+        ...(item.revision !== undefined ? { revision: item.revision } : {}),
       })
 
       if (result && typeof result === 'object' && 'ok' in result && !result.ok) {
-        // Roll the optimistic value back — the server rejected it. Most likely
-        // an evidence-required item, or a run that is no longer editable.
+        // Roll the optimistic value back — the server rejected it. Evidence still
+        // missing, a stale revision (someone else edited first), or a sealed run.
         setOptimistic((prev) => ({ ...prev, [item.id]: !checked }))
-        setError((result as { message?: string }).message ?? 'Could not update that item.')
+        const message = (result as { message?: string }).message
+        const code = (result as { code?: string }).code
+        setError(message ?? 'Could not update that item.')
+        // A CONFLICT on this action can only be a stale revision — pull the
+        // latest state so the next attempt sends the current revision.
+        if (code === 'CONFLICT') startTransition(() => router.refresh())
         return
       }
 
@@ -198,10 +226,40 @@ export function DeploymentSectionPanel({
                 </label>
 
                 {item.helpText && <p className="mt-1 text-xs text-gray-500">{item.helpText}</p>}
-                {item.note && (
-                  <p className="mt-1 text-xs text-gray-400">
-                    <span className="text-gray-600">note:</span> {item.note}
-                  </p>
+
+                {/**
+                 * Evidence-required items need a note before they can be checked.
+                 * The box stays editable while unchecked so the note can be
+                 * entered first; once checked, the saved note shows read-only
+                 * alongside the sign-off. Without this input such an item could
+                 * never be ticked and the run could never pass its gate.
+                 */}
+                {item.evidenceRequired && !item.skipped && !checked && !readOnly ? (
+                  <div className="no-print mt-2">
+                    <label
+                      htmlFor={`note-${item.id}`}
+                      className="font-mono text-[10px] uppercase tracking-wider text-amber-500/80"
+                    >
+                      Evidence required
+                    </label>
+                    <textarea
+                      id={`note-${item.id}`}
+                      value={draftFor(item)}
+                      onChange={(event) =>
+                        setNoteDraft((prev) => ({ ...prev, [item.id]: event.target.value }))
+                      }
+                      disabled={pendingId === item.id}
+                      rows={2}
+                      placeholder="Record the evidence — a snapshot id, a ticket link, a confirmation…"
+                      className="mt-1 w-full rounded border border-gray-700 bg-gray-800/60 px-2 py-1.5 text-xs text-gray-200 placeholder:text-gray-600 focus:border-amber-600/60 focus:outline-none disabled:opacity-50"
+                    />
+                  </div>
+                ) : (
+                  item.note && (
+                    <p className="mt-1 text-xs text-gray-400">
+                      <span className="text-gray-600">note:</span> {item.note}
+                    </p>
+                  )
                 )}
 
                 {/* Who ticked it and when — the part that makes this a record. */}

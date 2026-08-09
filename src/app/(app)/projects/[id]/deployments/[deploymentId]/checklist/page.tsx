@@ -209,7 +209,7 @@ export default async function DeploymentChecklistPage(props: {
       {/* The gauge is a dark gradient SVG — the print header states the same
           numbers in text, so it does not need to survive onto paper. */}
       <div className="no-print">
-        <DeploymentGauge progress={checkedItems} total={totalItems} />
+        <DeploymentGauge progress={checkedItems} total={totalItems} gate={pdfData.gate} />
       </div>
 
       {transitions.length > 0 && (

@@ -69,6 +69,40 @@ export class UsersService {
   }
 
   /**
+   * Refuse to grant permissions the actor does not themselves hold, whether they
+   * arrive through a role or as direct extra permissions.
+   *
+   * This is the edit-path twin of `invitationService.assertNoEscalation`; both
+   * doors mint authority, so both must apply the same rule. Super-admins are
+   * exempt because they already hold everything. The check is against the actor's
+   * organisation-wide grants: a permission held only on an assigned project does
+   * not let its holder hand it out org-wide.
+   */
+  private assertNoEscalation(
+    ctx: RequestContext,
+    granted: {
+      roles: readonly { name: string; permissions: string[] }[]
+      extraPermissions: readonly string[]
+    },
+  ): void {
+    if (ctx.permissions.isSuperAdmin) return
+
+    const forbid = (permission: string, source: string) => {
+      if (permission === WILDCARD || !ctx.permissions.global.has(permission)) {
+        throw new ValidationError(
+          `You cannot grant ${source} because it includes permissions you do not hold.`,
+          { roleIds: [`${source} exceeds your own access`] },
+        )
+      }
+    }
+
+    for (const role of granted.roles) {
+      for (const permission of role.permissions) forbid(permission, `"${role.name}"`)
+    }
+    for (const permission of granted.extraPermissions) forbid(permission, `"${permission}"`)
+  }
+
+  /**
    * Refuse a change that would leave the organization with no way back in.
    *
    * `LAST_SUPER_ADMIN` has been in the error vocabulary since Phase 1 and nothing
@@ -221,6 +255,32 @@ export class UsersService {
     if (roles.length !== input.roleIds.length) {
       throw new NotFoundError('Role', 'one or more of the selected roles')
     }
+
+    /**
+     * Only the newly added roles matter for the escalation guard below, so an
+     * existing (grandfathered) assignment does not block an unrelated edit. Note
+     * this path deliberately does NOT enforce `isAssignableGlobally` — under the
+     * user-level role model a role assigned to a user always applies org-wide, and
+     * that is the documented behaviour (see the user-management integration test).
+     */
+    const addedRoles = roles.filter((role) => !target.roleIds.includes(role.id))
+
+    /**
+     * Privilege-escalation guard, mirroring `invitationService.assertNoEscalation`
+     * on the invite door: you cannot grant, via a role or a direct permission,
+     * anything you do not hold yourself. Without this, `user.edit` is a full
+     * org-takeover primitive — an operator opens their own page, ticks Admin (or
+     * adds `settings.manage` to extra permissions), and owns the org next request.
+     *
+     * Only *additions* are checked, so editing a user who already out-ranks the
+     * actor (e.g. renaming an Admin) is not blocked; granting new authority is.
+     */
+    this.assertNoEscalation(ctx, {
+      roles: addedRoles,
+      extraPermissions: input.extraPermissions.filter(
+        (key) => !target.extraPermissions.includes(key),
+      ),
+    })
 
     const rolesChanged =
       input.roleIds.length !== target.roleIds.length ||
@@ -423,16 +483,33 @@ export class UsersService {
     /// so it gets the same refusal. Modelled as "no roles, deactivated".
     await this.assertNotLastSuperAdmin(ctx, target, { roleIds: [], status: 'DEACTIVATED' })
 
-    const user = await db.user.update({
-      where: { id: userId },
-      data: {
-        deletedAt: new Date(),
-        status: 'DEACTIVATED',
-        /// Bumping the epoch revokes every live session for this user at once —
-        /// a deleted account must not keep browsing on an unexpired JWT.
-        sessionEpoch: { increment: 1 },
-        updatedById: ctx.actorId,
-      },
+    const user = await db.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id: userId },
+        data: {
+          deletedAt: new Date(),
+          status: 'DEACTIVATED',
+          /// Bumping the epoch revokes every live session for this user at once —
+          /// a deleted account must not keep browsing on an unexpired JWT.
+          sessionEpoch: { increment: 1 },
+          updatedById: ctx.actorId,
+        },
+      })
+
+      /**
+       * Revoke any outstanding invitation. Without this the token stays PENDING
+       * after the user is deleted, the deleted invitee can still "accept" (which
+       * flips the soft-deleted row to ACTIVE while `deletedAt` remains set — a
+       * corrupt state that then fails login), and the admin cannot clean it up
+       * because the invitation is behind a `deletedAt: null` filter. The accept
+       * path now also refuses a deleted target, so this closes both ends.
+       */
+      await tx.invitation.updateMany({
+        where: { email: target.email, organizationId: ctx.organizationId, status: 'PENDING' },
+        data: { status: 'REVOKED', revokedAt: new Date(), revokedById: ctx.actorId },
+      })
+
+      return updated
     })
 
     await audit.record(db, ctx, AUDIT_ACTIONS.user.deleted, {
