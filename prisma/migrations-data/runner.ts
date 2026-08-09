@@ -487,6 +487,35 @@ const MIGRATIONS: Migration[] = [
       )
     },
   },
+  {
+    name: '0010-backfill-deleted-at-api-keys-integrations',
+    /**
+     * The same `deletedAt`-must-be-present repair as 0003, for two collections
+     * that were only added to the soft-delete set later (see
+     * `src/lib/db/soft-delete-extension.ts`). Any api_key or integration written
+     * before that stamped no `deletedAt` field, so it is invisible to its own
+     * `deletedAt: null` list query on the MongoDB connector — created, then gone
+     * from the admin UI. This stamps the field so those rows reappear. Idempotent:
+     * it only touches documents where the field is absent.
+     */
+    up: async (client) => {
+      for (const collection of ['api_keys', 'integrations']) {
+        const result = (await client.$runCommandRaw({
+          update: collection,
+          updates: [
+            {
+              q: { deletedAt: { $exists: false } },
+              u: { $set: { deletedAt: null } },
+              multi: true,
+            },
+          ],
+        })) as { nModified?: number; n?: number }
+
+        const modified = result.nModified ?? 0
+        if (modified > 0) console.log(`      ${collection}: stamped ${modified} document(s)`)
+      }
+    },
+  },
 ]
 
 /**
