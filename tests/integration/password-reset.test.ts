@@ -261,7 +261,7 @@ describe('the worker actually delivers it', () => {
     expect(after.lastError).toBeNull()
   })
 
-  it('closes the row out with a reason when email is switched off', async () => {
+  it('dead-letters the row as recoverable when email is switched off', async () => {
     const notifications = await loadDispatcher({ EMAIL_ENABLED: 'false' })
 
     await requestResetUnthrottled(userEmail, { ip: '203.0.113.13' })
@@ -273,8 +273,10 @@ describe('the worker actually delivers it', () => {
       where: { idempotencyKey: row.idempotencyKey },
     })
 
-    // Nothing is lost — the row is retryable the moment a provider exists.
-    expect(after.status).toBe('SENT')
+    // DEAD, not SENT: it was never delivered, so marking it SENT was a lie that
+    // also let the 30-day TTL prune it and the retry route refuse it. DEAD is
+    // retryable the moment a provider exists, and nothing is lost.
+    expect(after.status).toBe('DEAD')
     expect(after.lastError).toMatch(/email disabled/i)
     expect(after.payload).toMatchObject({ email: userEmail })
   })

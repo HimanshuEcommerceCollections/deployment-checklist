@@ -42,7 +42,7 @@ export default async function IntegrationsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {integrations.map((integration: any) => (
+              {integrations.map((integration) => (
                 <TableRow key={integration.id}>
                   <TableCell className="font-medium">{integration.name}</TableCell>
                   <TableCell>

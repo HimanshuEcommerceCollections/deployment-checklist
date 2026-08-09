@@ -49,12 +49,9 @@ export async function login(raw: unknown): Promise<ActionResult<{ redirectTo: st
             'This account has not been set up yet. Check your inbox for the invitation email.',
           )
         }
-        if (reason === 'LOCKED') {
-          return fail(
-            'RATE_LIMITED',
-            'Too many failed attempts. Please wait a few minutes and try again.',
-          )
-        }
+        // No distinct message for a locked account: that revealed which emails
+        // are real. Lockout still applies server-side; it reads as a normal
+        // credential failure here. See AuthService.explainFailure.
         return fail('UNAUTHENTICATED', 'Invalid email or password.')
       }
       throw error

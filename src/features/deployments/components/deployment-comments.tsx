@@ -27,29 +27,41 @@ export function DeploymentComments({ deploymentId, comments }: DeploymentComment
   const router = useRouter()
   const [body, setBody] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [pending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
+  /**
+   * Tracks the whole submit, not just the post-success refresh. `useTransition`'s
+   * pending flag only covered `router.refresh()`, so the button stayed enabled
+   * during the network call itself and a fast double-click posted the comment
+   * twice. This guards the whole operation.
+   */
+  const [submitting, setSubmitting] = useState(false)
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (!body.trim()) return
+    if (!body.trim() || submitting) return
 
     setError(null)
+    setSubmitting(true)
 
-    /**
-     * `body`, not `content`. The schema is `.strict()`, so the old payload was
-     * rejected twice over — an unrecognised key and a missing required one — and
-     * because the result was never checked before a `window.location.reload()`,
-     * every comment vanished with no message at all.
-     */
-    const result = await addDeploymentComment(deploymentId, { body: body.trim() })
+    try {
+      /**
+       * `body`, not `content`. The schema is `.strict()`, so the old payload was
+       * rejected twice over — an unrecognised key and a missing required one — and
+       * because the result was never checked before a `window.location.reload()`,
+       * every comment vanished with no message at all.
+       */
+      const result = await addDeploymentComment(deploymentId, { body: body.trim() })
 
-    if (!result.ok) {
-      setError(result.message)
-      return
+      if (!result.ok) {
+        setError(result.message)
+        return
+      }
+
+      setBody('')
+      startTransition(() => router.refresh())
+    } finally {
+      setSubmitting(false)
     }
-
-    setBody('')
-    startTransition(() => router.refresh())
   }
 
   return (
@@ -90,12 +102,12 @@ export function DeploymentComments({ deploymentId, comments }: DeploymentComment
             placeholder="Add a comment…"
             value={body}
             onChange={(event) => setBody(event.target.value)}
-            disabled={pending}
+            disabled={submitting}
             maxLength={5000}
             aria-label="Comment"
           />
-          <Button type="submit" disabled={pending || !body.trim()}>
-            {pending ? 'Posting…' : 'Post comment'}
+          <Button type="submit" disabled={submitting || !body.trim()}>
+            {submitting ? 'Posting…' : 'Post comment'}
           </Button>
         </form>
       </CardContent>

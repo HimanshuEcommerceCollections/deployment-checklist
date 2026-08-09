@@ -194,6 +194,8 @@ function preconditionMessage(reason: string): string {
       return 'Only the person who checked this item can uncheck it.'
     case 'VERSION_PUBLISHED':
       return 'A published template version cannot be edited. Clone it to a draft first.'
+    case 'NOT_PUBLISHED':
+      return 'Only a published version can be deprecated.'
     case 'TEMPLATE_EMPTY':
       return 'A template needs at least one section with one item before it can be published.'
     case 'LAST_SUPER_ADMIN':

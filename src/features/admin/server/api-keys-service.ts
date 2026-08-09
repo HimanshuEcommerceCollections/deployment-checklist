@@ -2,6 +2,7 @@ import 'server-only'
 
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
+import { NotFoundError } from '@/domain/shared/errors'
 import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { db } from '@/lib/db/prisma'
@@ -67,8 +68,21 @@ export class ApiKeysService {
   async revokeApiKey(ctx: RequestContext, keyId: string) {
     requirePermission(ctx, PERMISSIONS.admin.access)
 
+    /**
+     * Scope by a filtered read first. `update({ where: { id } })` checks only the
+     * id — neither the tenant extension nor the soft-delete extension narrows a
+     * unique-id write — so without this an admin of one organization could revoke
+     * another organization's key by id. This is the pattern every other service
+     * uses; it was missing here.
+     */
+    const existing = await db.apiKey.findFirst({
+      where: { id: keyId, organizationId: ctx.organizationId, deletedAt: null },
+      select: { id: true },
+    })
+    if (!existing) throw new NotFoundError('ApiKey', keyId)
+
     const apiKey = await db.apiKey.update({
-      where: { id: keyId },
+      where: { id: existing.id },
       data: { revokedAt: new Date(), revokedById: ctx.actorId },
     })
 

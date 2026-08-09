@@ -48,6 +48,8 @@ export interface ItemStateLike {
   note?: string | null
   checkedByName?: string | null
   checkedAt?: Date | null
+  /** Optimistic-concurrency counter — the toggle asserts on the value it read. */
+  revision?: number
 }
 
 /** Totals every view of a run agrees on. A skipped item is accounted for. */
@@ -82,11 +84,14 @@ export function joinSnapshot(snapshot: ChecklistSnapshot, states: readonly ItemS
             label: item.label,
             helpText: item.helpText,
             isRequired: item.isRequired,
+            /** Drives the note-required UI — without it the tick can never satisfy the gate. */
+            evidenceRequired: item.evidenceRequired ?? false,
             checked: state?.checked ?? false,
             skipped: state?.skipped ?? false,
             note: state?.note ?? null,
             checkedByName: state?.checkedByName ?? null,
             checkedAt: state?.checkedAt ?? null,
+            revision: state?.revision ?? 0,
           }
         })
 

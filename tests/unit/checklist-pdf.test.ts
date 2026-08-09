@@ -8,6 +8,17 @@ import {
 } from '@/features/deployments/components/checklist-pdf-document'
 
 /**
+ * `ChecklistPdfDocument` returns a `<Document>` but its own props are `{ data }`,
+ * so its element type does not structurally match react-pdf's `DocumentProps`.
+ * The engine renders it fine; the cast is only to satisfy `renderToBuffer`'s
+ * parameter type. Isolated here so the tests below stay readable.
+ */
+const render = (data: ChecklistPdfData) =>
+  renderToBuffer(
+    createElement(ChecklistPdfDocument, { data }) as Parameters<typeof renderToBuffer>[0],
+  )
+
+/**
  * Renders the PDF document through the real layout engine.
  *
  * react-pdf throws at render time for mistakes the type system cannot see —
@@ -89,7 +100,7 @@ const data: ChecklistPdfData = {
 
 describe('ChecklistPdfDocument', () => {
   it('renders a multi-page PDF without throwing', async () => {
-    const buffer = await renderToBuffer(createElement(ChecklistPdfDocument, { data }))
+    const buffer = await render(data)
 
     // %PDF magic bytes, and a size that cannot be an empty shell.
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-')
@@ -112,7 +123,7 @@ describe('ChecklistPdfDocument', () => {
       sections: [{ title: 'Empty section', description: null, accounted: 0, items: [] }],
     }
 
-    const buffer = await renderToBuffer(createElement(ChecklistPdfDocument, { data: empty }))
+    const buffer = await render(empty)
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-')
   })
 })

@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useActionState } from 'react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,7 +45,10 @@ export function InviteUserForm({ roles }: InviteUserFormProps) {
       })
 
       if (result.ok) {
-        router.push('/admin/users?invited=true')
+        // The list page never read `?invited=true`, so the redirect landed with
+        // no confirmation. A toast is shown regardless of which page renders next.
+        toast.success('Invitation sent')
+        router.push('/admin/users')
       }
 
       return result

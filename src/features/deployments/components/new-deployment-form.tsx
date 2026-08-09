@@ -47,7 +47,15 @@ export function NewDeploymentForm({
   const selectedEnvironment = environments.find((e) => e.id === environmentId)
 
   const [state, action, pending] = useActionState<State, FormData>(async (_previous, formData) => {
-    const scheduledAt = String(formData.get('scheduledAt') ?? '')
+    const scheduledAtLocal = String(formData.get('scheduledAt') ?? '')
+
+    /**
+     * A `datetime-local` value ("2026-08-09T14:30") carries no timezone, and the
+     * server's `z.coerce.date()` would read that wall-clock as UTC — so a user in
+     * IST scheduling 14:30 stored 14:30 UTC (20:00 IST). Converting here, in the
+     * browser, resolves it against the user's own zone and sends a real instant.
+     */
+    const scheduledAt = scheduledAtLocal ? new Date(scheduledAtLocal).toISOString() : undefined
 
     const result = await createDeployment({
       projectId,
@@ -59,7 +67,7 @@ export function NewDeploymentForm({
       // coercion on a field the user deliberately left blank.
       title: String(formData.get('title') ?? '').trim() || undefined,
       releaseNotes: String(formData.get('releaseNotes') ?? '').trim() || undefined,
-      scheduledAt: scheduledAt || undefined,
+      scheduledAt,
     })
 
     if (result.ok && 'data' in result && result.data) {

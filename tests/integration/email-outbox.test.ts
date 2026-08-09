@@ -103,7 +103,7 @@ afterAll(async () => {
 })
 
 describe('outbox drain with EMAIL_ENABLED=false', () => {
-  it('queues the notification anyway, then closes it out with the reason', async () => {
+  it('queues the notification, then dead-letters it as recoverable rather than losing it', async () => {
     const notifications = await loadDispatcher({ EMAIL_ENABLED: 'false' })
     const key = probe('disabled')
 
@@ -120,12 +120,13 @@ describe('outbox drain with EMAIL_ENABLED=false', () => {
 
     const row = await db.notificationOutbox.findUniqueOrThrow({
       where: { idempotencyKey: key },
-      select: { status: true, provider: true, providerMessageId: true, lastError: true, payload: true },
+      select: { status: true, providerMessageId: true, lastError: true, payload: true },
     })
 
-    // Closed out, not left to retry until it dead-letters.
-    expect(row.status).toBe('SENT')
-    expect(row.provider).toBe('disabled')
+    // DEAD, not SENT: it was never delivered. SENT would have been pruned by the
+    // 30-day TTL and refused by the admin retry, silently losing the notification.
+    // DEAD is retryable the moment a provider is configured.
+    expect(row.status).toBe('DEAD')
     // Nothing was actually handed to a transport.
     expect(row.providerMessageId).toBeNull()
     expect(row.lastError).toContain('EMAIL_ENABLED=false')
@@ -133,15 +134,16 @@ describe('outbox drain with EMAIL_ENABLED=false', () => {
     expect(row.payload).toMatchObject({ email: 'probe@example.com' })
   })
 
-  it('does not report the skipped row as a delivery failure', async () => {
+  it('parks the skipped row as dead-lettered, not as a transient failure', async () => {
     const notifications = await loadDispatcher({ EMAIL_ENABLED: 'false' })
     const key = probe('not-failed')
 
     await enqueueReset(notifications, key)
     const totals = await drainUntilProcessed(notifications, key)
 
+    // Terminal-but-recoverable, so it does not retry-spin: dead once, never failed.
     expect(totals.failed).toBe(0)
-    expect(totals.dead).toBe(0)
+    expect(totals.dead).toBe(1)
   })
 })
 
@@ -162,5 +164,58 @@ describe('outbox drain with EMAIL_ENABLED=true', () => {
     expect(row.provider).toBe('console')
     expect(row.providerMessageId).toMatch(/^console-/)
     expect(row.lastError).toBeNull()
+  })
+})
+
+describe('outbox drain and a stranded SENDING lock', () => {
+  const statusOf = async (idempotencyKey: string) =>
+    (
+      await db.notificationOutbox.findUniqueOrThrow({
+        where: { idempotencyKey },
+        select: { status: true },
+      })
+    ).status
+
+  it('reclaims a SENDING row whose worker died mid-send and delivers it', async () => {
+    const notifications = await loadDispatcher({ EMAIL_ENABLED: 'true' })
+    const key = probe('stranded')
+
+    await enqueueReset(notifications, key)
+
+    // Simulate a worker that claimed the row then died: SENDING, lock long past.
+    // Nothing sweeps such a row before this fix — drain only saw PENDING/FAILED
+    // and the admin retry only accepts FAILED/DEAD, so it was stuck forever.
+    await db.notificationOutbox.update({
+      where: { idempotencyKey: key },
+      data: {
+        status: 'SENDING',
+        lockedAt: new Date(Date.now() - 10 * 60 * 1000),
+        lockedBy: 'dead-worker',
+        attempts: 1,
+      },
+    })
+
+    let status = 'SENDING'
+    for (let pass = 0; pass < 20 && status !== 'SENT'; pass += 1) {
+      await notifications.drain({ batchSize: 50 })
+      status = await statusOf(key)
+    }
+    expect(status).toBe('SENT')
+  })
+
+  it('does not steal a fresh SENDING lock from a live worker', async () => {
+    const notifications = await loadDispatcher({ EMAIL_ENABLED: 'true' })
+    const key = probe('fresh-lock')
+
+    await enqueueReset(notifications, key)
+    await db.notificationOutbox.update({
+      where: { idempotencyKey: key },
+      data: { status: 'SENDING', lockedAt: new Date(), lockedBy: 'live-worker', attempts: 1 },
+    })
+
+    // A single drain must not touch a lock held moments ago — that would race a
+    // worker mid-send and double-deliver.
+    await notifications.drain({ batchSize: 50 })
+    expect(await statusOf(key)).toBe('SENDING')
   })
 })

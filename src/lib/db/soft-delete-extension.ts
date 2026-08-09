@@ -62,6 +62,12 @@ const SOFT_DELETE_MODELS = new Set<string>([
   'ProjectTemplate',
   'DeploymentRun',
   'DeploymentComment',
+  // Both carry `deletedAt` and an index on it, and their list queries filter
+  // `deletedAt: null` — but omitting them here meant `create` never stamped the
+  // field, so on MongoDB every key/integration was invisible the moment it was
+  // saved (the null-vs-missing trap this file documents).
+  'ApiKey',
+  'Integration',
 ])
 
 type AnyArgs = { where?: Record<string, unknown> } & Record<string, unknown>

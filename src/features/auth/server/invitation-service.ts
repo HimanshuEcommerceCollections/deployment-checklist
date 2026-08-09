@@ -9,6 +9,7 @@ import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { env } from '@/lib/config/env'
 import { generateToken, hashToken } from '@/lib/crypto'
+import { isUniqueViolation } from '@/lib/db/errors'
 import { db } from '@/lib/db/prisma'
 import { RATE_LIMITS, consume } from '@/lib/http/rate-limit'
 import { notifications } from '@/lib/notifications/dispatcher'
@@ -36,12 +37,20 @@ export class InvitationService {
       throw new ValidationError('You have sent a lot of invitations recently. Try again shortly.')
     }
 
+    /**
+     * Include soft-deleted rows. `email` is globally unique, so a placeholder
+     * user left behind by a revoked or trashed invite still holds the address —
+     * filtering `deletedAt: null` hid it, sent the code down the `create` branch,
+     * and hit the unique index with an opaque "Something went wrong". Scoped to
+     * this organisation because the unique email is global: a match in another
+     * org is handled by the P2002 mapping below, not revived here.
+     */
     const existing = await db.user.findFirst({
-      where: { email: input.email, deletedAt: null },
-      select: { id: true, status: true, email: true },
+      where: { email: input.email, organizationId: ctx.organizationId },
+      select: { id: true, status: true, email: true, deletedAt: true },
     })
 
-    if (existing && existing.status === 'ACTIVE') {
+    if (existing && existing.status === 'ACTIVE' && !existing.deletedAt) {
       throw new ConflictError('DUPLICATE_KEY', { field: 'email' })
     }
 
@@ -94,6 +103,9 @@ export class InvitationService {
               name: input.name ?? undefined,
               roleIds: input.roleIds,
               status: 'INVITED',
+              // Revive a soft-deleted placeholder so the re-invite lands on the
+              // existing row rather than colliding with the unique email.
+              deletedAt: null,
               invitedById: ctx.actorId,
               updatedById: ctx.actorId,
             },
@@ -166,6 +178,14 @@ export class InvitationService {
       )
 
       return { invitation, userId: user.id }
+    }).catch((error) => {
+      // A unique-email collision here can only be a match in another organisation
+      // (a same-org row was revived above). Surface it as a clear conflict rather
+      // than the opaque INTERNAL_ERROR a raw P2002 becomes.
+      if (isUniqueViolation(error)) {
+        throw new ConflictError('DUPLICATE_KEY', { field: 'email' })
+      }
+      throw error
     })
 
     return result
@@ -249,6 +269,36 @@ export class InvitationService {
         select: { roleIds: true, projectGrants: true, createdUserId: true, email: true },
       })
 
+      /**
+       * Claim the invitation first, as a compare-and-set on PENDING. Two truly
+       * concurrent accepts of the same token both passed the pre-transaction
+       * `inspectToken`; without this guard both would commit — double session-epoch
+       * bump, duplicate audit rows. Consuming it up front means the second
+       * transaction matches zero rows and rolls the whole accept back.
+       */
+      const claimed = await tx.invitation.updateMany({
+        where: { id: invitation.id, status: 'PENDING' },
+        data: { status: 'ACCEPTED', acceptedAt: now, acceptedIp: meta.ip ?? null },
+      })
+      if (claimed.count === 0) {
+        throw new PreconditionFailedError('INVITE_NOT_VALID', { state: 'used' })
+      }
+
+      /**
+       * Refuse to activate a soft-deleted account. An admin may have deleted the
+       * invitee between the link being sent and opened; deleteUser now revokes the
+       * invitation, but this is the defence at the write itself — flipping a
+       * `deletedAt`-set row to ACTIVE would produce an account that appears active
+       * yet cannot log in.
+       */
+      const live = await tx.user.findFirst({
+        where: { id: full.createdUserId!, deletedAt: null },
+        select: { id: true },
+      })
+      if (!live) {
+        throw new PreconditionFailedError('INVITE_NOT_VALID', { state: 'revoked' })
+      }
+
       const user = await tx.user.update({
         where: { id: full.createdUserId! },
         data: {
@@ -277,14 +327,7 @@ export class InvitationService {
         })
       }
 
-      await tx.invitation.update({
-        where: { id: invitation.id },
-        data: {
-          status: 'ACCEPTED',
-          acceptedAt: now,
-          acceptedIp: meta.ip ?? null,
-        },
-      })
+      // The invitation was already marked ACCEPTED by the compare-and-set above.
 
       await audit.recordSystem(tx, user.organizationId, AUDIT_ACTIONS.user.inviteAccepted, {
         entityType: 'User',
