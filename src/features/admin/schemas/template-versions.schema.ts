@@ -2,11 +2,19 @@ import { z } from 'zod'
 
 export const PublishVersionSchema = z.object({}).strict()
 
+/**
+ * Optional text fields are `nullish`, not `optional`: the editor's draft state
+ * models "empty" as null (matching the domain, where the embedded documents
+ * store null), so `.optional()` rejected every submission whose optional field
+ * was left blank with "Expected string, received null" — which made adding any
+ * ordinary item through the UI impossible. On update the two are distinct:
+ * undefined means "leave unchanged", null means "clear it".
+ */
 export const CreateSectionSchema = z
   .object({
     title: z.string().min(1).max(200),
-    description: z.string().max(1000).optional(),
-    key: z.string().max(100).optional(),
+    description: z.string().max(1000).nullish(),
+    key: z.string().max(100).nullish(),
     order: z.number().int().nonnegative().optional(),
   })
   .strict()
@@ -19,11 +27,11 @@ export type UpdateSectionInput = z.infer<typeof UpdateSectionSchema>
 export const CreateItemSchema = z
   .object({
     label: z.string().min(1).max(500),
-    helpText: z.string().max(2000).optional(),
-    key: z.string().max(100).optional(),
+    helpText: z.string().max(2000).nullish(),
+    key: z.string().max(100).nullish(),
     isRequired: z.boolean().default(true),
     evidenceRequired: z.boolean().default(false),
-    ownerRoleKey: z.string().max(100).optional(),
+    ownerRoleKey: z.string().max(100).nullish(),
     environmentKeys: z.array(z.string()).default([]),
     order: z.number().int().nonnegative().optional(),
   })

@@ -415,8 +415,13 @@ export class TemplateVersionsService {
         ? {
             ...s,
             title: input.title ?? s.title,
-            description: input.description ?? s.description,
-            key: input.key ?? s.key,
+            /**
+             * `=== undefined`, not `??`: these fields are nullable, and null
+             * means "clear it". `??` treated a deliberate clear as "keep the
+             * old value", so an emptied description could never be saved.
+             */
+            description: input.description === undefined ? s.description : input.description,
+            key: input.key === undefined ? s.key : input.key,
             order: input.order ?? s.order,
           }
         : s,
@@ -531,12 +536,15 @@ export class TemplateVersionsService {
                 : {
                     ...i,
                     label: input.label ?? i.label,
-                    helpText: input.helpText ?? i.helpText,
-                    key: input.key ?? i.key,
+                    /// `=== undefined` on the nullable fields: null is a
+                    /// deliberate clear, which `??` silently discarded.
+                    helpText: input.helpText === undefined ? i.helpText : input.helpText,
+                    key: input.key === undefined ? i.key : input.key,
                     order: input.order ?? i.order,
                     isRequired: input.isRequired ?? i.isRequired,
                     evidenceRequired: input.evidenceRequired ?? i.evidenceRequired,
-                    ownerRoleKey: input.ownerRoleKey ?? i.ownerRoleKey,
+                    ownerRoleKey:
+                      input.ownerRoleKey === undefined ? i.ownerRoleKey : input.ownerRoleKey,
                     environmentKeys: input.environmentKeys ?? i.environmentKeys,
                   },
             ),
