@@ -75,6 +75,16 @@ export class AdminProjectsService {
     })
   }
 
+  async getProject(ctx: RequestContext, id: string) {
+    /// Same gate as listAllProjects: this is the admin surface, and its list is
+    /// what links here — a stricter per-project check would 403 rows it showed.
+    requirePermission(ctx, PERMISSIONS.admin.access)
+
+    return db.project.findFirst({
+      where: { id, organizationId: ctx.organizationId, deletedAt: null },
+    })
+  }
+
   async createProject(ctx: RequestContext, input: { name: string; description?: string; color?: string; key?: string; environments?: string[] }) {
     requirePermission(ctx, PERMISSIONS.project.create)
 
