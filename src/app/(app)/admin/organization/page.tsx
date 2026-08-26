@@ -11,7 +11,7 @@ export default async function OrganizationPage() {
     <div className="space-y-6 max-w-2xl">
       <div>
         <h1 className="text-3xl font-bold">Organization Settings</h1>
-        <p className="text-gray-600 mt-2">Manage your organization profile and details</p>
+        <p className="text-muted-foreground mt-2">Manage your organization profile and details</p>
       </div>
 
       <Card>
@@ -29,15 +29,15 @@ export default async function OrganizationPage() {
         </CardHeader>
         <CardContent className="space-y-2">
           <div className="flex justify-between">
-            <span className="text-gray-600">Organization ID</span>
+            <span className="text-muted-foreground">Organization ID</span>
             <span className="font-mono text-sm">{org.id}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-600">Status</span>
+            <span className="text-muted-foreground">Status</span>
             <span>{org.isActive ? 'Active' : 'Inactive'}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-600">Created</span>
+            <span className="text-muted-foreground">Created</span>
             <span>{new Date(org.createdAt).toLocaleDateString()}</span>
           </div>
         </CardContent>

@@ -47,7 +47,7 @@ export function PasswordForm() {
 
   if (done) {
     return (
-      <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+      <div className="rounded-lg border border-go/40 bg-go-surface p-4 text-sm text-go">
         <p className="font-medium">Password changed.</p>
         <p className="mt-1">
           Every existing session was signed out, including this one. Redirecting you to sign in…
@@ -59,7 +59,7 @@ export function PasswordForm() {
   return (
     <form action={action} className="space-y-4">
       {state && !state.ok && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded-lg border border-blocked/40 bg-blocked-surface p-3 text-sm text-blocked">
           {state.message}
         </div>
       )}
@@ -75,7 +75,7 @@ export function PasswordForm() {
           disabled={pending}
         />
         {fieldError('currentPassword') && (
-          <p className="mt-1 text-xs text-red-600">{fieldError('currentPassword')}</p>
+          <p className="mt-1 text-xs text-blocked">{fieldError('currentPassword')}</p>
         )}
       </div>
 
@@ -92,9 +92,9 @@ export function PasswordForm() {
           disabled={pending}
         />
         {fieldError('newPassword') && (
-          <p className="mt-1 text-xs text-red-600">{fieldError('newPassword')}</p>
+          <p className="mt-1 text-xs text-blocked">{fieldError('newPassword')}</p>
         )}
-        <p className="mt-1 text-xs text-gray-500">At least 8 characters.</p>
+        <p className="mt-1 text-xs text-muted-foreground">At least 8 characters.</p>
       </div>
 
       <div>
@@ -110,11 +110,11 @@ export function PasswordForm() {
           disabled={pending}
         />
         {fieldError('confirmPassword') && (
-          <p className="mt-1 text-xs text-red-600">{fieldError('confirmPassword')}</p>
+          <p className="mt-1 text-xs text-blocked">{fieldError('confirmPassword')}</p>
         )}
       </div>
 
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-muted-foreground">
         Changing your password signs out every device, including this one.
       </p>
 

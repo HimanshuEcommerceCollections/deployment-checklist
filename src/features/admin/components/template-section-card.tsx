@@ -6,6 +6,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 
 import type { EditorItem, EditorSection, RoleOption, EnvironmentOption } from './template-version-editor'
@@ -118,7 +125,7 @@ export function TemplateSectionCard({
 
   return (
     <div className="rounded-lg border">
-      <div className="flex items-start justify-between gap-4 border-b bg-gray-50/60 p-4">
+      <div className="flex items-start justify-between gap-4 border-b bg-muted/60 p-4">
         {editingSection ? (
           <div className="flex-1 space-y-3">
             <div>
@@ -174,13 +181,13 @@ export function TemplateSectionCard({
           <>
             <div className="min-w-0">
               <h3 className="flex items-center gap-2 font-semibold">
-                <span className="text-sm font-normal text-gray-500">{index + 1}.</span>
+                <span className="text-sm font-normal text-muted-foreground">{index + 1}.</span>
                 {section.title}
               </h3>
               {section.description && (
-                <p className="mt-1 text-sm text-gray-600">{section.description}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{section.description}</p>
               )}
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 {section.items.length} item{section.items.length === 1 ? '' : 's'}
               </p>
             </div>
@@ -216,7 +223,7 @@ export function TemplateSectionCard({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="text-red-700 hover:text-red-800"
+                  className="text-blocked hover:text-blocked"
                   disabled={pending}
                   onClick={() => onDeleteSection(section.id, section.title)}
                 >
@@ -230,7 +237,7 @@ export function TemplateSectionCard({
 
       <div className="divide-y">
         {section.items.length === 0 && !addingItem && (
-          <p className="p-4 text-sm text-gray-600">
+          <p className="p-4 text-sm text-muted-foreground">
             No items yet. A section with no items is skipped when a deployment snapshots this
             template.
           </p>
@@ -256,13 +263,13 @@ export function TemplateSectionCard({
                 <p className="flex flex-wrap items-center gap-2 text-sm">
                   <span>{item.label}</span>
                   {!item.isRequired && (
-                    <Badge className="bg-gray-100 text-gray-700">Optional</Badge>
+                    <Badge className="bg-muted text-foreground">Optional</Badge>
                   )}
                   {item.evidenceRequired && (
-                    <Badge className="bg-amber-100 text-amber-800">Evidence</Badge>
+                    <Badge className="bg-hold-surface text-hold">Evidence</Badge>
                   )}
                   {item.environmentKeys.length > 0 && (
-                    <Badge className="bg-blue-100 text-blue-800">
+                    <Badge className="bg-cyan/10 text-cyan">
                       {item.environmentKeys.join(', ')}
                     </Badge>
                   )}
@@ -270,7 +277,7 @@ export function TemplateSectionCard({
                     <Badge className="bg-violet-100 text-violet-800">{item.ownerRoleKey}</Badge>
                   )}
                 </p>
-                {item.helpText && <p className="mt-1 text-xs text-gray-600">{item.helpText}</p>}
+                {item.helpText && <p className="mt-1 text-xs text-muted-foreground">{item.helpText}</p>}
               </div>
 
               {!readOnly && (
@@ -304,7 +311,7 @@ export function TemplateSectionCard({
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-red-700 hover:text-red-800"
+                    className="text-blocked hover:text-blocked"
                     disabled={pending}
                     onClick={() => onDeleteItem(section.id, item.id, item.label)}
                   >
@@ -371,7 +378,7 @@ function ItemForm({
   onCancel: () => void
 }) {
   return (
-    <div className="space-y-3 rounded-md bg-gray-50 p-4">
+    <div className="space-y-3 rounded-md bg-muted p-4">
       <div>
         <Label htmlFor="item-label">Item</Label>
         <Input
@@ -411,20 +418,26 @@ function ItemForm({
         </div>
         <div>
           <Label htmlFor="item-owner">Usual owner (optional)</Label>
-          <select
-            id="item-owner"
-            className="h-9 w-full rounded-md border px-3 text-sm"
-            value={draft.ownerRoleKey ?? ''}
-            onChange={(event) => setDraft({ ...draft, ownerRoleKey: event.target.value || null })}
+          <Select
+            value={draft.ownerRoleKey ?? 'anyone'}
+            onValueChange={(value) =>
+              setDraft({ ...draft, ownerRoleKey: value === 'anyone' ? null : value })
+            }
             disabled={pending}
           >
-            <option value="">Anyone</option>
-            {roles.map((role) => (
-              <option key={role.key} value={role.key}>
-                {role.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="item-owner" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {/* Radix refuses an empty item value, so "anyone" stands in for null. */}
+              <SelectItem value="anyone">Anyone</SelectItem>
+              {roles.map((role) => (
+                <SelectItem key={role.key} value={role.key}>
+                  {role.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -452,7 +465,7 @@ function ItemForm({
       {environments.length > 0 && (
         <fieldset>
           <legend className="text-sm font-medium">Environments</legend>
-          <p className="text-xs text-gray-600">
+          <p className="text-xs text-muted-foreground">
             Leave all unchecked to include this item in every environment.
           </p>
           <div className="mt-2 flex flex-wrap gap-3">

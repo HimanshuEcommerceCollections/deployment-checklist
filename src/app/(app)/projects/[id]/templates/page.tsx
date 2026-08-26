@@ -46,20 +46,20 @@ export default async function ProjectTemplatesPage(props: {
         </div>
       </div>
 
-      <p className="text-gray-600">
+      <p className="text-muted-foreground">
         Select which templates are available for creating deployments in this project.
       </p>
 
       {templates.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-gray-600">No templates available.</p>
+          <p className="text-muted-foreground">No templates available.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {templates.map((template: any) => (
             <label
               key={template.id}
-              className="p-4 rounded-lg border border-gray-200 hover:border-blue-400 cursor-pointer transition"
+              className="p-4 rounded-lg border border-line hover:border-cyan cursor-pointer transition"
             >
               <input
                 type="checkbox"
@@ -69,8 +69,8 @@ export default async function ProjectTemplatesPage(props: {
               />
               <div className="ml-3 inline-block">
                 <p className="font-medium">{template.name}</p>
-                <p className="text-sm text-gray-600 mt-1">{template.description}</p>
-                <p className="text-xs text-gray-500 mt-2">
+                <p className="text-sm text-muted-foreground mt-1">{template.description}</p>
+                <p className="text-xs text-muted-foreground mt-2">
                   {template._count.versions} version(s)
                 </p>
               </div>

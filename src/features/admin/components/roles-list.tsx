@@ -20,7 +20,7 @@ export function RolesList({ roles }: RolesListProps) {
   if (roles.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center">
-        <p className="text-gray-600">No roles yet.</p>
+        <p className="text-muted-foreground">No roles yet.</p>
       </div>
     )
   }
@@ -41,7 +41,7 @@ export function RolesList({ roles }: RolesListProps) {
             <TableRow key={role.id}>
               <TableCell className="font-medium">{role.name}</TableCell>
               <TableCell className="font-mono text-sm">{role.key}</TableCell>
-              <TableCell className="text-sm text-gray-600">{role.permissions.length} permissions</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{role.permissions.length} permissions</TableCell>
               <TableCell>
                 <Link href={`/admin/roles/${role.id}`}>
                   <Button variant="ghost" size="sm">Edit</Button>

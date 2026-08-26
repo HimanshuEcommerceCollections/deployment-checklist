@@ -18,15 +18,15 @@ export default async function DeploymentsPage(props: { params: Promise<{ id: str
   const statusColor = (status: string) => {
     switch (status) {
       case 'DRAFT':
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-muted text-foreground'
       case 'IN_PROGRESS':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-cyan/10 text-cyan'
       case 'COMPLETED':
-        return 'bg-green-100 text-green-800'
+        return 'bg-go-surface text-go'
       case 'FAILED':
-        return 'bg-red-100 text-red-800'
+        return 'bg-blocked-surface text-blocked'
       default:
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-muted text-foreground'
     }
   }
 
@@ -41,7 +41,7 @@ export default async function DeploymentsPage(props: { params: Promise<{ id: str
 
       {deployments.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-gray-600">No deployments yet. Create one to get started.</p>
+          <p className="text-muted-foreground">No deployments yet. Create one to get started.</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border">
@@ -63,7 +63,7 @@ export default async function DeploymentsPage(props: { params: Promise<{ id: str
                     {/* `title` is optional — a run created without one showed a
                         blank name. The reference is always present. */}
                     {dep.title || `${dep.reference} · ${dep.version}`}
-                    <span className="block font-mono text-xs text-gray-500">{dep.reference}</span>
+                    <span className="block font-mono text-xs text-muted-foreground">{dep.reference}</span>
                   </TableCell>
                   <TableCell>
                     <Badge className={statusColor(dep.status)}>{dep.status}</Badge>
@@ -75,7 +75,7 @@ export default async function DeploymentsPage(props: { params: Promise<{ id: str
                   <TableCell className="text-sm">
                     {dep.completedItems}/{dep.totalItems}
                   </TableCell>
-                  <TableCell className="text-sm text-gray-600">
+                  <TableCell className="text-sm text-muted-foreground">
                     {new Date(dep.createdAt).toLocaleDateString()}
                   </TableCell>
                   <TableCell>

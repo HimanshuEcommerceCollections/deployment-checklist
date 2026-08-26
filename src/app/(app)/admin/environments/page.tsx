@@ -15,7 +15,7 @@ export default async function EnvironmentsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Environments</h1>
-          <p className="text-gray-600">Manage deployment targets</p>
+          <p className="text-muted-foreground">Manage deployment targets</p>
         </div>
         <Link href="/admin/environments/new">
           <Button>Add Environment</Button>

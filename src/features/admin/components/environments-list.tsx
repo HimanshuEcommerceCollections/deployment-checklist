@@ -21,7 +21,7 @@ export function EnvironmentsList({ environments }: EnvironmentsListProps) {
   if (environments.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center">
-        <p className="text-gray-600">No environments yet.</p>
+        <p className="text-muted-foreground">No environments yet.</p>
       </div>
     )
   }
@@ -43,7 +43,7 @@ export function EnvironmentsList({ environments }: EnvironmentsListProps) {
               <TableCell className="font-medium">{env.name}</TableCell>
               <TableCell className="font-mono text-sm">{env.key}</TableCell>
               <TableCell>
-                <Badge className={env.isProduction ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}>
+                <Badge className={env.isProduction ? 'bg-blocked-surface text-blocked' : 'bg-cyan/10 text-cyan'}>
                   {env.isProduction ? 'Production' : 'Non-Prod'}
                 </Badge>
               </TableCell>

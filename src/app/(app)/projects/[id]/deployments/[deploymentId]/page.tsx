@@ -83,7 +83,7 @@ export default async function DeploymentPage(props: {
               ← Back
             </Button>
           </Link>
-          <p className="font-mono text-xs uppercase tracking-widest text-gray-500">
+          <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             {deployment.reference} · {deployment.version}
             {snapshot.templateName ? ` · ${snapshot.templateName} v${snapshot.version}` : ''}
           </p>
@@ -91,7 +91,7 @@ export default async function DeploymentPage(props: {
             <h1 className="text-3xl font-bold">{heading}</h1>
             <DeploymentStatusBadge status={deployment.status} />
             {deployment.isProduction && (
-              <Badge className="bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
+              <Badge className="bg-blocked-surface text-blocked">
                 Production
               </Badge>
             )}
@@ -176,17 +176,17 @@ export default async function DeploymentPage(props: {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-lg font-semibold">{percent}%</span>
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-muted-foreground">
                   {accounted}/{total}
                 </span>
               </div>
-              <div className="h-2 w-full rounded-full bg-gray-200">
+              <div className="h-2 w-full rounded-full bg-line">
                 <div
-                  className="h-2 rounded-full bg-green-500 transition-all"
+                  className="h-2 rounded-full bg-go transition-all"
                   style={{ width: `${percent}%` }}
                 />
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {requiredOutstanding === 0
                   ? 'All required items accounted for'
                   : `${requiredOutstanding} required outstanding`}
@@ -213,7 +213,7 @@ export default async function DeploymentPage(props: {
             <CardTitle>Release Notes</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="whitespace-pre-wrap text-gray-700">{deployment.releaseNotes}</p>
+            <p className="whitespace-pre-wrap text-foreground">{deployment.releaseNotes}</p>
           </CardContent>
         </Card>
       )}
@@ -224,7 +224,7 @@ export default async function DeploymentPage(props: {
         </CardHeader>
         <CardContent>
           {sections.length === 0 ? (
-            <p className="text-gray-600">
+            <p className="text-muted-foreground">
               This run has no checklist content. The template version it was created from had
               no items for {deployment.environmentName}.
             </p>
@@ -240,25 +240,25 @@ export default async function DeploymentPage(props: {
                   <Link
                     key={section.id}
                     href={checklistHref}
-                    className="flex items-center gap-4 rounded-lg border p-3 transition hover:bg-gray-50"
+                    className="flex items-center gap-4 rounded-lg border p-3 transition hover:bg-muted"
                   >
-                    <span className="w-6 font-mono text-xs text-gray-400">
+                    <span className="w-6 font-mono text-xs text-muted-foreground">
                       {String(index + 1).padStart(2, '0')}
                     </span>
                     <span className="flex-1 text-sm font-medium">{section.title}</span>
-                    <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-200">
+                    <div className="h-1.5 w-24 overflow-hidden rounded-full bg-line">
                       <div
-                        className="h-full rounded-full bg-green-500 transition-all"
+                        className="h-full rounded-full bg-go transition-all"
                         style={{ width: `${sectionPercent}%` }}
                       />
                     </div>
-                    <span className="w-12 text-right font-mono text-xs text-gray-500">
+                    <span className="w-12 text-right font-mono text-xs text-muted-foreground">
                       {section.accounted}/{section.items.length}
                     </span>
                   </Link>
                 )
               })}
-              <p className="pt-1 text-xs text-gray-500">
+              <p className="pt-1 text-xs text-muted-foreground">
                 Open the checklist to tick items — that is where progress is recorded.
               </p>
             </div>

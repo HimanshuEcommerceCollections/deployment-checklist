@@ -38,7 +38,7 @@ export default async function ProjectPage(props: { params: Promise<{ id: string 
       </div>
 
       {project.description && (
-        <p className="text-gray-600">{project.description}</p>
+        <p className="text-muted-foreground">{project.description}</p>
       )}
 
       <div className="grid gap-6 md:grid-cols-3">
@@ -76,7 +76,7 @@ export default async function ProjectPage(props: { params: Promise<{ id: string 
               {project.memberships.map((member: any) => (
                 <div key={member.id} className="flex items-center justify-between py-2">
                   <span>{member.user?.name}</span>
-                  <span className="text-sm text-gray-600">{member.user?.email}</span>
+                  <span className="text-sm text-muted-foreground">{member.user?.email}</span>
                 </div>
               ))}
             </div>

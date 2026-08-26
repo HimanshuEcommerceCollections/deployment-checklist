@@ -12,7 +12,7 @@ export default async function ProfilePage() {
     <div className="max-w-2xl space-y-8">
       <div>
         <h1 className="text-3xl font-bold">Account Settings</h1>
-        <p className="mt-2 text-gray-600">
+        <p className="mt-2 text-muted-foreground">
           Manage your account information and security settings
         </p>
       </div>
@@ -43,11 +43,11 @@ export default async function ProfilePage() {
         </CardHeader>
         <CardContent className="space-y-2">
           <div className="flex justify-between">
-            <span className="text-gray-600">Account created</span>
+            <span className="text-muted-foreground">Account created</span>
             <span>{new Date(user.createdAt).toLocaleDateString()}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-600">User ID</span>
+            <span className="text-muted-foreground">User ID</span>
             <span className="font-mono text-sm">{user.id}</span>
           </div>
         </CardContent>

@@ -27,7 +27,7 @@ export default async function IntegrationsPage() {
 
       {integrations.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-gray-600">No integrations yet.</p>
+          <p className="text-muted-foreground">No integrations yet.</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border">
@@ -54,14 +54,14 @@ export default async function IntegrationsPage() {
                     <Badge
                       className={
                         integration.enabled
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
+                          ? 'bg-go-surface text-go'
+                          : 'bg-muted text-foreground'
                       }
                     >
                       {integration.enabled ? 'Enabled' : 'Disabled'}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-sm text-gray-600">
+                  <TableCell className="text-sm text-muted-foreground">
                     {new Date(integration.createdAt).toLocaleDateString()}
                   </TableCell>
                   <TableCell>

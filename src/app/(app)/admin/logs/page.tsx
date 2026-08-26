@@ -32,7 +32,7 @@ export default async function LogsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Application Logs</h1>
-        <p className="text-gray-600 mt-2">View system and application events</p>
+        <p className="text-muted-foreground mt-2">View system and application events</p>
       </div>
 
       <div className="overflow-x-auto rounded-lg border">
@@ -49,7 +49,7 @@ export default async function LogsPage() {
           <TableBody>
             {logs.map((log) => (
               <TableRow key={log.id}>
-                <TableCell className="text-sm text-gray-600">
+                <TableCell className="text-sm text-muted-foreground">
                   {new Date(log.createdAt).toLocaleString()}
                 </TableCell>
                 <TableCell className="font-mono text-sm">{log.action}</TableCell>
@@ -61,8 +61,8 @@ export default async function LogsPage() {
                   <Badge
                     className={
                       log.action.includes('deleted')
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-blue-100 text-blue-800'
+                        ? 'bg-blocked-surface text-blocked'
+                        : 'bg-cyan/10 text-cyan'
                     }
                   >
                     {log.action.split('.')[1]}

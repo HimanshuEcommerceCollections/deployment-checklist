@@ -188,14 +188,14 @@ export default async function DeploymentChecklistPage(props: {
           </Link>
         </div>
         <div className="no-print">
-          <p className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">
+          <p className="mb-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
             {deployment.reference} · {deployment.environmentName} · {deployment.version}
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-4xl font-bold text-white">{heading}</h1>
+            <h1 className="text-foreground text-4xl font-bold">{heading}</h1>
             <DeploymentStatusBadge status={deployment.status} />
           </div>
-          <p className="mt-2 text-gray-400">
+          <p className="text-muted-foreground mt-2">
             {snapshot.templateName ? `${snapshot.templateName} v${snapshot.version} — ` : ''}
             {gate.passes
               ? gate.policy === 'MANUAL'
@@ -213,8 +213,8 @@ export default async function DeploymentChecklistPage(props: {
       </div>
 
       {transitions.length > 0 && (
-        <div className="no-print rounded-xl border border-gray-700 bg-gray-900/50 p-6">
-          <p className="mb-3 font-mono text-xs uppercase tracking-widest text-gray-400">
+        <div className="no-print border-line bg-panel rounded-xl border p-6">
+          <p className="mb-3 font-mono text-xs uppercase tracking-widest text-muted-foreground">
             Launch control
           </p>
           <DeploymentStatusActions
@@ -239,8 +239,8 @@ export default async function DeploymentChecklistPage(props: {
             />
           ))
         ) : (
-          <div className="rounded-lg border border-gray-700 p-8 text-center">
-            <p className="text-gray-400">
+          <div className="border-line rounded-lg border p-8 text-center">
+            <p className="text-muted-foreground">
               This run has no checklist content. The template version it was created from had
               no items for {deployment.environmentName}.
             </p>
@@ -248,8 +248,8 @@ export default async function DeploymentChecklistPage(props: {
         )}
       </div>
 
-      <div className="no-print flex items-center justify-between border-t border-gray-700 pt-6">
-        <p className="text-sm text-gray-400">
+      <div className="no-print flex items-center justify-between border-line border-t pt-6">
+        <p className="text-muted-foreground text-sm">
           {sealed
             ? `Sealed — this record is ${deployment.status.toLowerCase()} and no longer editable.`
             : `Progress saved automatically · ${checkedItems}/${totalItems} items accounted for`}

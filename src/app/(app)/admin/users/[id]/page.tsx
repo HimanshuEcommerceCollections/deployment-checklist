@@ -23,10 +23,10 @@ import { getRequestContext } from '@/server/context'
 export const metadata = { title: 'Admin - User' }
 
 const STATUS_STYLE: Record<string, string> = {
-  ACTIVE: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
-  INVITED: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
-  SUSPENDED: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300',
-  DEACTIVATED: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  ACTIVE: 'bg-go-surface text-go',
+  INVITED: 'bg-cyan/10 text-cyan',
+  SUSPENDED: 'bg-hold-surface text-hold',
+  DEACTIVATED: 'bg-muted text-foreground',
 }
 
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -161,7 +161,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
                 <dd>{held.length > 0 ? held.map((r) => r.name).join(', ') : 'None'}</dd>
               </div>
               {locked && (
-                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+                <div className="rounded-lg border border-hold/40 bg-hold-surface p-2 text-xs">
                   Locked out after {user.failedLoginCount} failed attempts, until{' '}
                   {new Date(user.lockedUntil!).toLocaleString()}. Setting the status to Active
                   clears it.
