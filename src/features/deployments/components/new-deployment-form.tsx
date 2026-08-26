@@ -3,9 +3,18 @@
 import { useRouter } from 'next/navigation'
 import { useActionState, useState } from 'react'
 
+import { RouteTransitionOverlay } from '@/components/route-transition-overlay'
+
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 /// Type-only, so the `server-only` guard in that module is erased at compile time.
 import type { ActionResult } from '@/lib/http/action-result'
@@ -43,6 +52,7 @@ export function NewDeploymentForm({
 }: NewDeploymentFormProps) {
   const router = useRouter()
   const [environmentId, setEnvironmentId] = useState(environments[0]?.id ?? '')
+  const [navigating, setNavigating] = useState(false)
 
   const selectedEnvironment = environments.find((e) => e.id === environmentId)
 
@@ -72,6 +82,7 @@ export function NewDeploymentForm({
 
     if (result.ok && 'data' in result && result.data) {
       const created = result.data as { id: string }
+      setNavigating(true)
       router.push(`/projects/${projectId}/deployments/${created.id}/checklist`)
     }
 
@@ -80,30 +91,34 @@ export function NewDeploymentForm({
 
   return (
     <form action={action} className="space-y-4">
+      <RouteTransitionOverlay show={navigating} label="Opening the checklist…" />
       {state && !state.ok && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="rounded-lg border border-blocked/40 bg-blocked-surface p-4 text-sm text-blocked">
           {state.message}
         </div>
       )}
 
       <div>
         <Label htmlFor="templateVersionId">Checklist template</Label>
-        <select
-          id="templateVersionId"
-          name="templateVersionId"
-          required
-          disabled={pending}
-          defaultValue={versions[0]?.id}
-          className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-        >
-          {versions.map((version) => (
-            <option key={version.id} value={version.id}>
-              {version.label}
-              {version.detail ? ` (${version.detail})` : ''}
-            </option>
-          ))}
-        </select>
-        <p className="mt-1 text-xs text-gray-500">
+        {/**
+         * Radix Select rather than native: the OS-drawn popup ignored the dark
+         * theme. `name` renders a hidden native select so formData.get() in the
+         * action still reads the value (same pattern as the settings form).
+         */}
+        <Select name="templateVersionId" defaultValue={versions[0]?.id} disabled={pending}>
+          <SelectTrigger id="templateVersionId" className="mt-1 w-full">
+            <SelectValue placeholder="Choose a template…" />
+          </SelectTrigger>
+          <SelectContent>
+            {versions.map((version) => (
+              <SelectItem key={version.id} value={version.id}>
+                {version.label}
+                {version.detail ? ` (${version.detail})` : ''}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="mt-1 text-xs text-muted-foreground">
           The version&apos;s content is frozen into this run when it is created, so later
           template edits never change a release already in flight.
         </p>
@@ -111,24 +126,26 @@ export function NewDeploymentForm({
 
       <div>
         <Label htmlFor="environmentId">Environment</Label>
-        <select
-          id="environmentId"
+        <Select
           name="environmentId"
-          required
-          disabled={pending}
           value={environmentId}
-          onChange={(event) => setEnvironmentId(event.target.value)}
-          className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          onValueChange={setEnvironmentId}
+          disabled={pending}
         >
-          {environments.map((environment) => (
-            <option key={environment.id} value={environment.id}>
-              {environment.name}
-              {environment.isProduction ? ' — production' : ''}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id="environmentId" className="mt-1 w-full">
+            <SelectValue placeholder="Choose an environment…" />
+          </SelectTrigger>
+          <SelectContent>
+            {environments.map((environment) => (
+              <SelectItem key={environment.id} value={environment.id}>
+                {environment.name}
+                {environment.isProduction ? ' — production' : ''}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {selectedEnvironment?.isProduction && (
-          <p className="mt-1 text-xs text-amber-700">
+          <p className="mt-1 text-xs text-hold">
             This is a production environment. Every action on this run will additionally
             require the “Deploy to production” permission.
           </p>
@@ -145,7 +162,7 @@ export function NewDeploymentForm({
           placeholder="2.14.0"
           disabled={pending}
         />
-        <p className="mt-1 text-xs text-gray-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           Combined with a per-project sequence into a reference like {projectKey}-1.
         </p>
       </div>

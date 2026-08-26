@@ -4,9 +4,17 @@ import { useRouter } from 'next/navigation'
 import { useActionState, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 import { createIntegration, deleteIntegration, updateIntegration } from '../actions/integrations.actions'
 
@@ -41,6 +49,7 @@ export function IntegrationForm({ initial }: { initial?: IntegrationFormValues }
     JSON.stringify(initial?.config ?? { url: 'https://example.com/webhook' }, null, 2),
   )
   const [deleting, startDelete] = useTransition()
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const [state, action, pending] = useActionState<State, FormData>(async (_previous, formData) => {
     let config: Record<string, unknown>
@@ -66,6 +75,7 @@ export function IntegrationForm({ initial }: { initial?: IntegrationFormValues }
   async function remove() {
     startDelete(async () => {
       const result = await deleteIntegration(initial!.id!)
+      setConfirmingDelete(false)
       if (result.ok) {
         toast.success('Integration deleted')
         router.push('/admin/integrations')
@@ -79,7 +89,7 @@ export function IntegrationForm({ initial }: { initial?: IntegrationFormValues }
   return (
     <form action={action} className="space-y-4">
       {state.error && (
-        <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+        <div role="alert" className="rounded-lg border border-blocked/40 bg-blocked-surface px-3 py-2 text-sm text-blocked">
           {state.error}
         </div>
       )}
@@ -91,19 +101,22 @@ export function IntegrationForm({ initial }: { initial?: IntegrationFormValues }
 
       <div>
         <Label htmlFor="type">Type</Label>
-        <select
-          id="type"
+        <Select
           value={type}
-          onChange={(event) => setType(event.target.value as IntegrationFormValues['type'])}
+          onValueChange={(value) => setType(value as IntegrationFormValues['type'])}
           disabled={pending}
-          className="mt-1 w-full rounded border border-gray-700 bg-gray-800/60 px-3 py-2 text-sm capitalize"
         >
-          {TYPES.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id="type" className="mt-1 w-full capitalize">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TYPES.map((option) => (
+              <SelectItem key={option} value={option} className="capitalize">
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div>
@@ -115,7 +128,7 @@ export function IntegrationForm({ initial }: { initial?: IntegrationFormValues }
           disabled={pending}
           rows={6}
           spellCheck={false}
-          className="mt-1 w-full rounded border border-gray-700 bg-gray-800/60 px-3 py-2 font-mono text-xs"
+          className="mt-1 w-full rounded border border-line bg-panel-2 px-3 py-2 font-mono text-xs"
         />
       </div>
 
@@ -129,11 +142,30 @@ export function IntegrationForm({ initial }: { initial?: IntegrationFormValues }
           {pending ? 'Saving…' : editing ? 'Save changes' : 'Create integration'}
         </Button>
         {editing && (
-          <Button type="button" variant="destructive" disabled={deleting} onClick={remove}>
-            {deleting ? 'Deleting…' : 'Delete'}
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={deleting}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            Delete
           </Button>
         )}
       </div>
+
+      {editing && (
+        <ConfirmDialog
+          open={confirmingDelete}
+          onOpenChange={setConfirmingDelete}
+          title={`Delete ${initial!.name}?`}
+          description="Deployment events stop being sent to it immediately. This cannot be undone from the UI."
+          confirmLabel="Delete integration"
+          pendingLabel="Deleting…"
+          destructive
+          pending={deleting}
+          onConfirm={remove}
+        />
+      )}
     </form>
   )
 }

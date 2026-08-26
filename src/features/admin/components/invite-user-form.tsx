@@ -1,7 +1,9 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
+
+import { RouteTransitionOverlay } from '@/components/route-transition-overlay'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -25,6 +27,7 @@ type State = ActionResult<{ invitationId: string }> | null
 
 export function InviteUserForm({ roles }: InviteUserFormProps) {
   const router = useRouter()
+  const [navigating, setNavigating] = useState(false)
 
   /**
    * One action, wired through useActionState, driving both the submit and the
@@ -48,6 +51,7 @@ export function InviteUserForm({ roles }: InviteUserFormProps) {
         // The list page never read `?invited=true`, so the redirect landed with
         // no confirmation. A toast is shown regardless of which page renders next.
         toast.success('Invitation sent')
+        setNavigating(true)
         router.push('/admin/users')
       }
 
@@ -58,8 +62,9 @@ export function InviteUserForm({ roles }: InviteUserFormProps) {
 
   return (
     <form action={formAction} className="space-y-4">
+      <RouteTransitionOverlay show={navigating} label="Invitation sent…" />
       {state && !state.ok && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="rounded-lg border border-blocked/40 bg-blocked-surface p-4 text-sm text-blocked">
           {state.message}
         </div>
       )}
@@ -89,7 +94,7 @@ export function InviteUserForm({ roles }: InviteUserFormProps) {
       <fieldset className="space-y-2">
         <Label>Roles</Label>
         {roles.length === 0 ? (
-          <p className="text-sm text-gray-600">No roles available. Create roles first.</p>
+          <p className="text-sm text-muted-foreground">No roles available. Create roles first.</p>
         ) : (
           <div className="space-y-2">
             {roles.map((role) => (

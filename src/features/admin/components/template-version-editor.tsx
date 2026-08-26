@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -71,9 +72,9 @@ interface TemplateVersionEditorProps {
 }
 
 const STATUS_STYLES: Record<TemplateVersionEditorProps['status'], string> = {
-  DRAFT: 'bg-gray-100 text-gray-800',
-  PUBLISHED: 'bg-green-100 text-green-800',
-  DEPRECATED: 'bg-red-100 text-red-800',
+  DRAFT: 'bg-muted text-foreground',
+  PUBLISHED: 'bg-go-surface text-go',
+  DEPRECATED: 'bg-blocked-surface text-blocked',
 }
 
 /**
@@ -130,6 +131,19 @@ export function TemplateVersionEditor({
   const [sectionTitle, setSectionTitle] = useState('')
   const [sectionDescription, setSectionDescription] = useState('')
 
+  /**
+   * The pending confirmation, if any. One dialog serves the four irreversible
+   * verbs on this page; publish and deprecate previously fired on a single
+   * click, and the deletes went through the native `confirm()`.
+   */
+  const [confirming, setConfirming] = useState<
+    | { kind: 'publish' }
+    | { kind: 'deprecate' }
+    | { kind: 'delete-section'; sectionId: string; title: string }
+    | { kind: 'delete-item'; sectionId: string; itemId: string; label: string }
+    | null
+  >(null)
+
   const readOnly = status !== 'DRAFT' || !canManage
 
   /** Every mutation funnels through here so none can forget to surface a failure. */
@@ -138,6 +152,7 @@ export function TemplateVersionEditor({
     setNotice(null)
     startTransition(async () => {
       const result = await action()
+      setConfirming(null)
       if (result.ok) {
         setNotice(result.message ?? null)
         router.refresh()
@@ -174,11 +189,11 @@ export function TemplateVersionEditor({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">
-            {templateName} <span className="text-gray-500">v{versionNumber}</span>
+            {templateName} <span className="text-muted-foreground">v{versionNumber}</span>
           </h1>
           <div className="mt-2 flex items-center gap-3">
             <Badge className={STATUS_STYLES[status]}>{status}</Badge>
-            <span className="text-sm text-gray-600">
+            <span className="text-sm text-muted-foreground">
               {sections.length} section{sections.length === 1 ? '' : 's'} · {itemCount} item
               {itemCount === 1 ? '' : 's'} · {requiredCount} required
             </span>
@@ -190,7 +205,7 @@ export function TemplateVersionEditor({
             <Button
               disabled={pending || itemCount === 0}
               title={itemCount === 0 ? 'Add at least one item before publishing' : undefined}
-              onClick={() => run(() => publishTemplateVersion(templateId, versionId))}
+              onClick={() => setConfirming({ kind: 'publish' })}
             >
               {pending ? 'Working…' : 'Publish version'}
             </Button>
@@ -199,7 +214,7 @@ export function TemplateVersionEditor({
             <Button
               variant="ghost"
               disabled={pending}
-              onClick={() => run(() => deprecateTemplateVersion(templateId, versionId))}
+              onClick={() => setConfirming({ kind: 'deprecate' })}
             >
               Deprecate
             </Button>
@@ -208,18 +223,18 @@ export function TemplateVersionEditor({
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="rounded-lg border border-blocked/40 bg-blocked-surface p-4 text-sm text-blocked">
           {error}
         </div>
       )}
       {notice && !error && (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+        <div className="rounded-lg border border-go/40 bg-go-surface p-4 text-sm text-go">
           {notice}
         </div>
       )}
 
       {status !== 'DRAFT' && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <div className="rounded-lg border border-hold/40 bg-hold-surface p-4 text-sm text-hold">
           This version is {status.toLowerCase()} and cannot be edited — deployments snapshot their
           checklist from it, so a change here would rewrite history for releases that already
           happened. Start a new draft from the template page to make changes.
@@ -227,20 +242,20 @@ export function TemplateVersionEditor({
       )}
 
       {status === 'DRAFT' && !canManage && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <div className="rounded-lg border border-hold/40 bg-hold-surface p-4 text-sm text-hold">
           You do not have permission to edit template content.
         </div>
       )}
 
       {status === 'DRAFT' && canManage && itemCount === 0 && (
-        <div className="rounded-lg border border-dashed p-4 text-sm text-gray-600">
+        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
           A version cannot be published until it has at least one item.
         </div>
       )}
 
       <div className="space-y-4">
         {sections.length === 0 && (
-          <div className="rounded-lg border border-dashed p-8 text-center text-gray-600">
+          <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
             No sections yet.
           </div>
         )}
@@ -258,10 +273,7 @@ export function TemplateVersionEditor({
             onUpdateSection={(sectionId, input) =>
               run(() => updateTemplateSection(templateId, versionId, sectionId, input))
             }
-            onDeleteSection={(sectionId, title) => {
-              if (!confirm(`Delete section "${title}" and all of its items?`)) return
-              run(() => deleteTemplateSection(templateId, versionId, sectionId))
-            }}
+            onDeleteSection={(sectionId, title) => setConfirming({ kind: 'delete-section', sectionId, title })}
             onMoveSection={moveSection}
             onCreateItem={(sectionId, input: ItemDraft) =>
               run(() => createTemplateItem(templateId, versionId, sectionId, input))
@@ -269,10 +281,9 @@ export function TemplateVersionEditor({
             onUpdateItem={(sectionId, itemId, input: ItemDraft) =>
               run(() => updateTemplateItem(templateId, versionId, sectionId, itemId, input))
             }
-            onDeleteItem={(sectionId, itemId, label) => {
-              if (!confirm(`Delete item "${label}"?`)) return
-              run(() => deleteTemplateItem(templateId, versionId, sectionId, itemId))
-            }}
+            onDeleteItem={(sectionId, itemId, label) =>
+              setConfirming({ kind: 'delete-item', sectionId, itemId, label })
+            }
             onMoveItem={moveItem}
           />
         ))}
@@ -344,6 +355,55 @@ export function TemplateVersionEditor({
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(next) => !next && setConfirming(null)}
+        pending={pending}
+        destructive={confirming?.kind === 'delete-section' || confirming?.kind === 'delete-item'}
+        title={
+          confirming?.kind === 'publish'
+            ? `Publish v${versionNumber}?`
+            : confirming?.kind === 'deprecate'
+              ? `Deprecate v${versionNumber}?`
+              : confirming?.kind === 'delete-section'
+                ? `Delete section "${confirming.title}"?`
+                : confirming?.kind === 'delete-item'
+                  ? `Delete item "${confirming.label}"?`
+                  : ''
+        }
+        description={
+          confirming?.kind === 'publish'
+            ? 'Publishing freezes this version permanently — its sections and items can never be edited again, and new deployments will offer it. To change it later you clone it into a new draft.'
+            : confirming?.kind === 'deprecate'
+              ? 'Deprecated versions stop being offered for new deployments and cannot be re-published. Runs already created from it are unaffected.'
+              : confirming?.kind === 'delete-section'
+                ? 'Every item in this section is deleted with it.'
+                : 'This item is removed from the draft.'
+        }
+        confirmLabel={
+          confirming?.kind === 'publish'
+            ? 'Publish version'
+            : confirming?.kind === 'deprecate'
+              ? 'Deprecate version'
+              : confirming?.kind === 'delete-section'
+                ? 'Delete section'
+                : 'Delete item'
+        }
+        pendingLabel="Working…"
+        onConfirm={() => {
+          if (!confirming) return
+          if (confirming.kind === 'publish') {
+            run(() => publishTemplateVersion(templateId, versionId))
+          } else if (confirming.kind === 'deprecate') {
+            run(() => deprecateTemplateVersion(templateId, versionId))
+          } else if (confirming.kind === 'delete-section') {
+            run(() => deleteTemplateSection(templateId, versionId, confirming.sectionId))
+          } else {
+            run(() => deleteTemplateItem(templateId, versionId, confirming.sectionId, confirming.itemId))
+          }
+        }}
+      />
     </div>
   )
 }

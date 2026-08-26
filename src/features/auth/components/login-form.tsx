@@ -5,6 +5,8 @@ import { Loader2Icon } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+
+import { RouteTransitionOverlay } from '@/components/route-transition-overlay'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
@@ -24,6 +26,7 @@ import { login } from '../actions/auth.actions'
 export function LoginForm({ next }: { next?: string }) {
   const router = useRouter()
   const [formError, setFormError] = useState<string | null>(null)
+  const [navigating, setNavigating] = useState(false)
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(LoginSchema),
@@ -52,6 +55,9 @@ export function LoginForm({ next }: { next?: string }) {
 
     // router.refresh() first so the new session cookie is picked up by the RSC
     // payload; push alone can render the target with a stale (signed-out) tree.
+    // The overlay covers the gap until the destination route mounts — the form's
+    // own pending flag has already cleared by then.
+    setNavigating(true)
     router.refresh()
     router.push(result.data.redirectTo)
   }
@@ -60,6 +66,7 @@ export function LoginForm({ next }: { next?: string }) {
 
   return (
     <Form {...form}>
+      <RouteTransitionOverlay show={navigating} label="Signing in…" />
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
         {formError && (
           <div
