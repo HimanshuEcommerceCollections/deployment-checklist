@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -45,8 +46,8 @@ export function SettingsForm({ settings }: SettingsFormProps) {
    * every "setting" in it silently kept its old value.
    */
   const [state, formAction, pending] = useActionState<State, FormData>(
-    async (_previous, formData) =>
-      updateSettings({
+    async (_previous, formData) => {
+      const result = await updateSettings({
         companyName: String(formData.get('companyName') ?? ''),
         supportEmail: String(formData.get('supportEmail') ?? ''),
         primaryColor: String(formData.get('primaryColor') ?? ''),
@@ -62,7 +63,12 @@ export function SettingsForm({ settings }: SettingsFormProps) {
         lockoutMinutes: formData.get('lockoutMinutes'),
         emailDailyCap: formData.get('emailDailyCap'),
         emailRetryLimit: formData.get('emailRetryLimit'),
-      }),
+      })
+      // The Save button sits a long scroll below the banner at the top of this
+      // form, so success also gets a toast visible from down there.
+      if (result.ok) toast.success('Settings saved')
+      return result
+    },
     null,
   )
 

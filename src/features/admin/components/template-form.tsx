@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,7 +24,11 @@ export function TemplateForm({ template }: TemplateFormProps) {
           name: formData.get('name'),
           description: formData.get('description'),
         })
-        if (result.ok) router.push('/admin/templates')
+        if (result.ok) {
+          toast.success('Template created')
+          router.push('/admin/templates')
+          router.refresh()
+        }
         return result
       }
     : async (_: any, formData: FormData) => {
@@ -31,7 +36,11 @@ export function TemplateForm({ template }: TemplateFormProps) {
           name: formData.get('name'),
           description: formData.get('description'),
         })
-        if (result.ok) router.push('/admin/templates')
+        if (result.ok) {
+          toast.success('Template updated')
+          router.push('/admin/templates')
+          router.refresh()
+        }
         return result
       }
 

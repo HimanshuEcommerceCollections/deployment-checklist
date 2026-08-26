@@ -32,11 +32,14 @@ interface TemplateSectionCardProps {
   pending: boolean
   environments: EnvironmentOption[]
   roles: RoleOption[]
-  onUpdateSection: (sectionId: string, input: { title: string; description: string | null }) => void
+  onUpdateSection: (
+    sectionId: string,
+    input: { title: string; description: string | null },
+  ) => Promise<boolean>
   onDeleteSection: (sectionId: string, title: string) => void
   onMoveSection: (index: number, direction: -1 | 1) => void
-  onCreateItem: (sectionId: string, input: ItemDraft) => void
-  onUpdateItem: (sectionId: string, itemId: string, input: ItemDraft) => void
+  onCreateItem: (sectionId: string, input: ItemDraft) => Promise<boolean>
+  onUpdateItem: (sectionId: string, itemId: string, input: ItemDraft) => Promise<boolean>
   onDeleteItem: (sectionId: string, itemId: string, label: string) => void
   onMoveItem: (sectionId: string, index: number, direction: -1 | 1) => void
 }
@@ -116,11 +119,14 @@ export function TemplateSectionCard({
     setEditingItemId(null)
   }
 
-  function submitItem() {
+  async function submitItem() {
     if (!draft.label.trim()) return
-    if (editingItemId) onUpdateItem(section.id, editingItemId, draft)
-    else onCreateItem(section.id, draft)
-    closeItemForm()
+    const ok = editingItemId
+      ? await onUpdateItem(section.id, editingItemId, draft)
+      : await onCreateItem(section.id, draft)
+    // Close only on success — closing on failure would throw away the draft
+    // the person just typed, with the error banner as the only trace.
+    if (ok) closeItemForm()
   }
 
   return (
@@ -153,15 +159,15 @@ export function TemplateSectionCard({
               <Button
                 size="sm"
                 disabled={pending || !title.trim()}
-                onClick={() => {
-                  onUpdateSection(section.id, {
+                onClick={async () => {
+                  const ok = await onUpdateSection(section.id, {
                     title: title.trim(),
                     description: description.trim() || null,
                   })
-                  setEditingSection(false)
+                  if (ok) setEditingSection(false)
                 }}
               >
-                Save section
+                {pending ? 'Saving…' : 'Save section'}
               </Button>
               <Button
                 size="sm"
@@ -252,7 +258,7 @@ export function TemplateSectionCard({
                 environments={environments}
                 roles={roles}
                 pending={pending}
-                submitLabel="Save item"
+                submitLabel={pending ? 'Saving…' : 'Save item'}
                 onSubmit={submitItem}
                 onCancel={closeItemForm}
               />
@@ -331,7 +337,7 @@ export function TemplateSectionCard({
               environments={environments}
               roles={roles}
               pending={pending}
-              submitLabel="Add item"
+              submitLabel={pending ? 'Adding…' : 'Add item'}
               onSubmit={submitItem}
               onCancel={closeItemForm}
             />

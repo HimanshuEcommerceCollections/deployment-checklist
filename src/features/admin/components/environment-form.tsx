@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,7 +26,11 @@ export function EnvironmentForm({ environment }: EnvironmentFormProps) {
           isProduction: formData.get('isProduction') === 'on',
           order: formData.get('order'),
         })
-        if (result.ok) router.push('/admin/environments')
+        if (result.ok) {
+          toast.success('Environment created')
+          router.push('/admin/environments')
+          router.refresh()
+        }
         return result
       }
     : async (_: any, formData: FormData) => {
@@ -36,7 +41,11 @@ export function EnvironmentForm({ environment }: EnvironmentFormProps) {
           isProduction: formData.get('isProduction') === 'on',
           order: formData.get('order'),
         })
-        if (result.ok) router.push('/admin/environments')
+        if (result.ok) {
+          toast.success('Environment updated')
+          router.push('/admin/environments')
+          router.refresh()
+        }
         return result
       }
 
