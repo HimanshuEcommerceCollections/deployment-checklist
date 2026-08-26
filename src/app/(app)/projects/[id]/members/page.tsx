@@ -4,11 +4,8 @@ import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProjectMembersManager } from '@/features/projects/components/project-members-manager'
-import { membersService } from '@/features/projects/server/members-service'
+import { loadMembersPanelData } from '@/features/projects/server/members-panel-data'
 import { projectsService } from '@/features/projects/server/projects-service'
-import { can } from '@/lib/authz/authorize'
-import { PERMISSIONS } from '@/lib/authz/permissions'
-import { db } from '@/lib/db/prisma'
 import { getRequestContext } from '@/server/context'
 
 export const metadata = { title: 'Project Access' }
@@ -25,6 +22,9 @@ export const metadata = { title: 'Project Access' }
  * to the projects where an actor holds the permission, so creating a Membership
  * here is what makes a project visible to someone, and revoking hides it again on
  * their next request.
+ *
+ * Data assembly lives in `loadMembersPanelData`, shared with the admin Edit
+ * Project page so the two surfaces cannot drift.
  */
 export default async function ProjectAccessPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params
@@ -33,48 +33,7 @@ export default async function ProjectAccessPage(props: { params: Promise<{ id: s
   const project = await projectsService.getProject(ctx, params.id).catch(() => null)
   if (!project) notFound()
 
-  const canManage = can(ctx, PERMISSIONS.project.membersManage, { projectId: project.id })
-
-  const members = canManage ? await membersService.listProjectMembers(ctx, project.id) : []
-  const assignedIds = new Set(members.map((m) => m.user.id))
-
-  /**
-   * Roles are shown for context, so the page needs their names. Read directly
-   * rather than through rolesService, whose listRoles is not gated but whose whole
-   * rows would put every permission array in this page's flight payload.
-   */
-  const roleNames = canManage
-    ? Object.fromEntries(
-        (
-          await db.role.findMany({
-            where: { organizationId: ctx.organizationId, deletedAt: null },
-            select: { id: true, name: true },
-          })
-        ).map((role) => [role.id, role.name]),
-      )
-    : {}
-
-  /**
-   * Candidates come straight from the tenant rather than through usersService,
-   * which requires `user.read` — an actor may hold `project.members.manage` on one
-   * project without being allowed to browse the whole organization's user list.
-   */
-  const candidates = canManage
-    ? (
-        await db.user.findMany({
-          where: { organizationId: ctx.organizationId, deletedAt: null, status: 'ACTIVE' },
-          select: { id: true, name: true, email: true, roleIds: true },
-          orderBy: { name: 'asc' },
-        })
-      )
-        .filter((user) => !assignedIds.has(user.id))
-        .map((user) => ({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          roleNames: user.roleIds.map((id) => roleNames[id]).filter((n): n is string => Boolean(n)),
-        }))
-    : []
+  const { canManage, members, candidates } = await loadMembersPanelData(ctx, project.id)
 
   return (
     <div className="space-y-6">
@@ -99,14 +58,7 @@ export default async function ProjectAccessPage(props: { params: Promise<{ id: s
             <ProjectMembersManager
               projectId={project.id}
               projectName={project.name}
-              members={members.map((member) => ({
-                userId: member.user.id,
-                name: member.user.name,
-                email: member.user.email,
-                roleNames: member.user.roleIds
-                  .map((id) => roleNames[id])
-                  .filter((n): n is string => Boolean(n)),
-              }))}
+              members={members}
               candidates={candidates}
             />
           </CardContent>

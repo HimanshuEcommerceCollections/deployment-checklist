@@ -10,6 +10,11 @@ export async function listAllProjects() {
   return adminProjectsService.listAllProjects(ctx)
 }
 
+export async function getAdminProject(id: string) {
+  const ctx = await getRequestContext()
+  return adminProjectsService.getProject(ctx, id)
+}
+
 export async function createAdminProject(input: any) {
   try {
     const ctx = await getRequestContext()

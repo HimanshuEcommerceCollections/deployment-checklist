@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { SearchablePicker } from '@/components/searchable-picker'
 import { assignProject, revokeProject } from '@/features/projects/actions/members.actions'
 
 export interface AssignedProject {
@@ -94,7 +95,7 @@ export function UserProjectAccess({
   return (
     <div className="space-y-4">
       {seesAllProjects && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <div className="rounded-lg border border-hold/40 bg-hold-surface p-3 text-sm">
           <p className="font-medium">This user can already see every project.</p>
           <p className="mt-1 text-muted-foreground">
             One of their roles carries organization-wide authority, which applies everywhere and
@@ -104,7 +105,7 @@ export function UserProjectAccess({
       )}
 
       {roleNames.length === 0 && !seesAllProjects && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <div className="rounded-lg border border-hold/40 bg-hold-surface p-3 text-sm">
           <p className="font-medium">This user has no roles.</p>
           <p className="mt-1 text-muted-foreground">
             Assigning projects grants nothing on its own — the roles above decide what they can do,
@@ -180,20 +181,22 @@ export function UserProjectAccess({
 
           <div>
             <Label htmlFor="assign-project">Project</Label>
-            <select
-              id="assign-project"
-              value={projectId}
-              onChange={(event) => setProjectId(event.target.value)}
-              disabled={pending}
-              className="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs disabled:opacity-50 dark:bg-input/30"
-            >
-              <option value="">Choose a project…</option>
-              {available.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name} ({project.key})
-                </option>
-              ))}
-            </select>
+            <div className="mt-1">
+              {/* keyed on the dialog so the search resets each time it opens */}
+              <SearchablePicker
+                key={adding ? 'open' : 'closed'}
+                inputId="assign-project"
+                options={available.map((project) => ({
+                  id: project.id,
+                  primary: project.name,
+                  secondary: project.key,
+                }))}
+                value={projectId}
+                onSelect={setProjectId}
+                placeholder="Search projects by name or key…"
+                disabled={pending}
+              />
+            </div>
           </div>
 
           {error && <FormError message={error} />}

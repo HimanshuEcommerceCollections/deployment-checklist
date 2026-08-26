@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { SearchablePicker } from '@/components/searchable-picker'
 import {
   Table,
   TableBody,
@@ -187,21 +188,23 @@ export function ProjectMembersManager({ projectId, projectName, members, candida
 
           <div>
             <Label htmlFor="assign-user">Person</Label>
-            <select
-              id="assign-user"
-              value={userId}
-              onChange={(event) => setUserId(event.target.value)}
-              disabled={pending}
-              className="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs disabled:opacity-50 dark:bg-input/30"
-            >
-              <option value="">Choose someone…</option>
-              {candidates.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.name} — {candidate.email}
-                  {candidate.roleNames.length > 0 ? ` (${candidate.roleNames.join(', ')})` : ' (no roles)'}
-                </option>
-              ))}
-            </select>
+            <div className="mt-1">
+              {/* keyed on the dialog so the search resets each time it opens */}
+              <SearchablePicker
+                key={adding ? 'open' : 'closed'}
+                inputId="assign-user"
+                options={candidates.map((candidate) => ({
+                  id: candidate.id,
+                  primary: candidate.name,
+                  secondary: candidate.email,
+                  hint: candidate.roleNames.length > 0 ? candidate.roleNames.join(', ') : 'no roles',
+                }))}
+                value={userId}
+                onSelect={setUserId}
+                placeholder="Search by name or email…"
+                disabled={pending}
+              />
+            </div>
           </div>
 
           {error && <FormError message={error} />}
