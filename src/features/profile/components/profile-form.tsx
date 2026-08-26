@@ -39,12 +39,12 @@ export function ProfileForm({ name, email, jobTitle }: ProfileFormProps) {
   return (
     <form action={action} className="space-y-4">
       {state?.ok && (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+        <div className="rounded-lg border border-go/40 bg-go-surface p-3 text-sm text-go">
           Profile updated.
         </div>
       )}
       {state && !state.ok && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded-lg border border-blocked/40 bg-blocked-surface p-3 text-sm text-blocked">
           {state.message}
         </div>
       )}
@@ -52,7 +52,7 @@ export function ProfileForm({ name, email, jobTitle }: ProfileFormProps) {
       <div>
         <Label htmlFor="name">Full name</Label>
         <Input id="name" name="name" defaultValue={name} required maxLength={100} disabled={pending} />
-        {fieldError('name') && <p className="mt-1 text-xs text-red-600">{fieldError('name')}</p>}
+        {fieldError('name') && <p className="mt-1 text-xs text-blocked">{fieldError('name')}</p>}
       </div>
 
       <div>
@@ -66,8 +66,8 @@ export function ProfileForm({ name, email, jobTitle }: ProfileFormProps) {
           maxLength={255}
           disabled={pending}
         />
-        {fieldError('email') && <p className="mt-1 text-xs text-red-600">{fieldError('email')}</p>}
-        <p className="mt-1 text-xs text-gray-500">
+        {fieldError('email') && <p className="mt-1 text-xs text-blocked">{fieldError('email')}</p>}
+        <p className="mt-1 text-xs text-muted-foreground">
           This is also your sign-in address.
         </p>
       </div>

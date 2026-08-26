@@ -121,38 +121,38 @@ export function DeploymentSectionPanel({
   return (
     <div
       data-print-avoid-break
-      className="panel overflow-hidden rounded-lg border border-gray-700 bg-gray-900/50 transition hover:bg-gray-900/70"
+      className="panel overflow-hidden rounded-lg border border-line bg-panel transition hover:bg-panel-2"
     >
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-controls={panelId}
-        className="flex w-full items-center justify-between px-6 py-4 transition hover:bg-gray-800/50"
+        className="flex w-full items-center justify-between px-6 py-4 transition hover:bg-accent/60"
       >
         <div className="flex items-center gap-4 text-left">
-          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-gray-600 font-mono text-xs text-gray-400">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-line font-mono text-xs text-muted-foreground">
             {String(index + 1).padStart(2, '0')}
           </div>
           <div>
-            <span className="font-semibold text-white">{title}</span>
-            {description && <p className="mt-0.5 text-xs text-gray-500">{description}</p>}
+            <span className="font-semibold text-foreground">{title}</span>
+            {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
           </div>
         </div>
 
         <div className="flex items-center gap-6">
-          <div className="h-1 w-16 overflow-hidden rounded-full bg-gray-700">
+          <div className="h-1 w-16 overflow-hidden rounded-full bg-line">
             <div
-              className="h-full bg-green-500 transition-all duration-300"
+              className="h-full bg-go transition-all duration-300"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
-          <span className="min-w-fit font-mono text-xs text-gray-400">
+          <span className="min-w-fit font-mono text-xs text-muted-foreground">
             {checkedCount}/{items.length}
           </span>
           <ChevronRight
             size={16}
             aria-hidden
-            className={`no-print text-gray-500 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+            className={`no-print text-muted-foreground transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
           />
         </div>
       </button>
@@ -170,9 +170,9 @@ export function DeploymentSectionPanel({
        * of tab order, which is what an accordion should do on screen, while leaving
        * it in the document for print to force open.
        */}
-      <div id={panelId} hidden={!open} data-print-expand className="border-t border-gray-700">
+      <div id={panelId} hidden={!open} data-print-expand className="border-t border-line">
         {error && (
-          <div className="no-print border-b border-red-900/50 bg-red-950/40 px-6 py-2 text-xs text-red-300">
+          <div className="no-print border-b border-blocked/30 bg-blocked-surface px-6 py-2 text-xs text-blocked">
             {error}
           </div>
         )}
@@ -184,7 +184,7 @@ export function DeploymentSectionPanel({
             <div
               key={item.id}
               data-print-avoid-break
-              className="group flex items-start gap-3 border-b border-gray-800 px-6 py-3 transition last:border-b-0 hover:bg-gray-800/30"
+              className="group flex items-start gap-3 border-b border-line px-6 py-3 transition last:border-b-0 hover:bg-accent/40"
             >
               <input
                 type="checkbox"
@@ -192,7 +192,7 @@ export function DeploymentSectionPanel({
                 onChange={(event) => handleToggle(item, event.target.checked)}
                 disabled={readOnly || pendingId === item.id || item.skipped}
                 aria-label={item.label}
-                className="mt-0.5 h-5 w-5 cursor-pointer rounded border border-gray-600 bg-gray-800 accent-green-600 checked:border-green-600 checked:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-0.5 h-5 w-5 cursor-pointer rounded border border-line bg-panel-2 accent-go checked:border-go checked:bg-go disabled:cursor-not-allowed disabled:opacity-50"
               />
 
               {/**
@@ -208,24 +208,24 @@ export function DeploymentSectionPanel({
                 <label
                   className={`select-none text-sm transition ${
                     checked || item.skipped
-                      ? 'text-gray-500 line-through'
-                      : 'text-gray-200 group-hover:text-white'
+                      ? 'text-muted-foreground line-through'
+                      : 'text-foreground group-hover:text-foreground'
                   }`}
                 >
                   {item.label}
                   {!item.isRequired && (
-                    <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-gray-600">
+                    <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                       optional
                     </span>
                   )}
                   {item.skipped && (
-                    <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-amber-600">
+                    <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-hold">
                       skipped
                     </span>
                   )}
                 </label>
 
-                {item.helpText && <p className="mt-1 text-xs text-gray-500">{item.helpText}</p>}
+                {item.helpText && <p className="mt-1 text-xs text-muted-foreground">{item.helpText}</p>}
 
                 {/**
                  * Evidence-required items need a note before they can be checked.
@@ -238,7 +238,7 @@ export function DeploymentSectionPanel({
                   <div className="no-print mt-2">
                     <label
                       htmlFor={`note-${item.id}`}
-                      className="font-mono text-[10px] uppercase tracking-wider text-amber-500/80"
+                      className="font-mono text-[10px] uppercase tracking-wider text-hold"
                     >
                       Evidence required
                     </label>
@@ -251,20 +251,20 @@ export function DeploymentSectionPanel({
                       disabled={pendingId === item.id}
                       rows={2}
                       placeholder="Record the evidence — a snapshot id, a ticket link, a confirmation…"
-                      className="mt-1 w-full rounded border border-gray-700 bg-gray-800/60 px-2 py-1.5 text-xs text-gray-200 placeholder:text-gray-600 focus:border-amber-600/60 focus:outline-none disabled:opacity-50"
+                      className="mt-1 w-full rounded border border-line bg-panel-2 px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-hold/60 focus:outline-none disabled:opacity-50"
                     />
                   </div>
                 ) : (
                   item.note && (
-                    <p className="mt-1 text-xs text-gray-400">
-                      <span className="text-gray-600">note:</span> {item.note}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      <span className="text-muted-foreground/70">note:</span> {item.note}
                     </p>
                   )
                 )}
 
                 {/* Who ticked it and when — the part that makes this a record. */}
                 {checked && item.checkedByName && (
-                  <p className="mt-1 font-mono text-[10px] text-gray-600">
+                  <p className="mt-1 font-mono text-[10px] text-muted-foreground">
                     {item.checkedByName}
                     {item.checkedAt ? ` · ${new Date(item.checkedAt).toLocaleString()}` : ''}
                   </p>

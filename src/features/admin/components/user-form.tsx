@@ -7,6 +7,13 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 import { updateUser } from '../actions/users.actions'
 import { type PermissionRow, UserPermissionMatrix } from './user-permission-matrix'
@@ -190,19 +197,18 @@ export function UserForm({ user, roles, permissions, isSelf }: UserFormProps) {
           </p>
         ) : (
           <>
-            <select
-              id="status"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-              disabled={pending}
-              className="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs disabled:opacity-50 dark:bg-input/30"
-            >
-              {STATUSES.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <Select value={status} onValueChange={setStatus} disabled={pending}>
+              <SelectTrigger id="status" className="mt-1 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUSES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <p className="mt-1 text-xs text-muted-foreground">
               {STATUSES.find((s) => s.value === status)?.hint}
             </p>
@@ -233,7 +239,7 @@ export function UserForm({ user, roles, permissions, isSelf }: UserFormProps) {
                 <span className="text-sm">
                   {role.name}
                   {role.isSuperAdmin && (
-                    <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800 dark:bg-red-950 dark:text-red-300">
+                    <span className="ml-2 rounded bg-blocked-surface px-1.5 py-0.5 text-xs text-blocked">
                       full access
                     </span>
                   )}
@@ -257,7 +263,7 @@ export function UserForm({ user, roles, permissions, isSelf }: UserFormProps) {
         </div>
 
         {superAdmin ? (
-          <p className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm">
+          <p className="rounded-lg border border-blocked/40 bg-blocked-surface p-3 text-sm">
             This user holds a <strong>full access</strong> role. Every permission applies regardless
             of what is ticked below, and it cannot be narrowed per person — remove that role first
             if you want to limit them.
@@ -282,7 +288,7 @@ export function UserForm({ user, roles, permissions, isSelf }: UserFormProps) {
       </fieldset>
 
       {losingOwnAccess && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <div className="rounded-lg border border-hold/40 bg-hold-surface p-3 text-sm">
           This is your own account. Saving this will end your own access — you will be signed out
           on your next request.
         </div>

@@ -29,7 +29,7 @@ export default async function AuditPage() {
 
       {entries.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-gray-600">No audit entries yet.</p>
+          <p className="text-muted-foreground">No audit entries yet.</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border">
@@ -46,7 +46,7 @@ export default async function AuditPage() {
             <TableBody>
               {entries.map((entry: any) => (
                 <TableRow key={entry.id}>
-                  <TableCell className="text-sm text-gray-600">
+                  <TableCell className="text-sm text-muted-foreground">
                     {new Date(entry.createdAt).toLocaleString()}
                   </TableCell>
                   <TableCell className="text-sm">{entry.actorName}</TableCell>
@@ -55,7 +55,7 @@ export default async function AuditPage() {
                     {entry.entityType}
                     {entry.entityId && ` (${entry.entityId.slice(0, 8)}...)`}
                   </TableCell>
-                  <TableCell className="text-sm text-gray-600">
+                  <TableCell className="text-sm text-muted-foreground">
                     {entry.summary}
                   </TableCell>
                 </TableRow>

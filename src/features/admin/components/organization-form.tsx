@@ -27,8 +27,8 @@ export function OrganizationForm({ organization }: OrganizationFormProps) {
         <div
           className={
             state.ok
-              ? 'rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800'
-              : 'rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800'
+              ? 'rounded-lg border border-go/40 bg-go-surface p-3 text-sm text-go'
+              : 'rounded-lg border border-blocked/40 bg-blocked-surface p-3 text-sm text-blocked'
           }
         >
           {/* The success arm of the envelope carries data, not prose. */}
@@ -59,7 +59,7 @@ export function OrganizationForm({ organization }: OrganizationFormProps) {
           pattern="[a-z0-9]+(-[a-z0-9]+)*"
           disabled={pending}
         />
-        <p className="mt-1 text-xs text-gray-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           Lowercase letters, numbers and hyphens. Identifies your organization.
         </p>
       </div>

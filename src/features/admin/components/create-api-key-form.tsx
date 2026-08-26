@@ -48,15 +48,15 @@ export function CreateApiKeyForm() {
   if (state.token) {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
-          <p className="text-sm font-semibold text-amber-200">
+        <div className="rounded-lg border border-hold/40 bg-hold-surface p-4">
+          <p className="text-sm font-semibold text-hold">
             Copy this key now — it is shown only once.
           </p>
-          <p className="mt-1 text-xs text-amber-200/70">
+          <p className="mt-1 text-xs text-hold">
             It is stored only as a hash. If you lose it, revoke this key and create another.
           </p>
           <div className="mt-3 flex items-center gap-2">
-            <code className="flex-1 overflow-x-auto rounded border border-gray-700 bg-gray-900 px-3 py-2 font-mono text-sm">
+            <code className="flex-1 overflow-x-auto rounded border border-line bg-panel px-3 py-2 font-mono text-sm">
               {state.token}
             </code>
             <Button
@@ -81,7 +81,7 @@ export function CreateApiKeyForm() {
   return (
     <form action={action} className="space-y-4">
       {state.error && (
-        <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+        <div role="alert" className="rounded-lg border border-blocked/40 bg-blocked-surface px-3 py-2 text-sm text-blocked">
           {state.error}
         </div>
       )}

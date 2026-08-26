@@ -44,7 +44,7 @@ export function AdminProjectForm({ project }: AdminProjectFormProps) {
   return (
     <form action={action} className="space-y-6">
       {!state?.ok && state && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="rounded-lg border border-blocked/40 bg-blocked-surface p-4 text-sm text-blocked">
           {state.message}
         </div>
       )}
@@ -71,7 +71,7 @@ export function AdminProjectForm({ project }: AdminProjectFormProps) {
           placeholder="Auto-generated from name"
           disabled={pending}
         />
-        <p className="mt-1 text-xs text-gray-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           Used in version strings and lists, e.g. FRESHBREATH. Leave blank to generate it.
         </p>
       </div>
@@ -99,7 +99,7 @@ export function AdminProjectForm({ project }: AdminProjectFormProps) {
             disabled={pending}
             className="h-10 w-20"
           />
-          <span className="text-sm text-gray-600">{project?.color || '#3b82f6'}</span>
+          <span className="text-sm text-muted-foreground">{project?.color || '#3b82f6'}</span>
         </div>
       </div>
 

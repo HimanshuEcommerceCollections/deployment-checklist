@@ -28,10 +28,10 @@ interface UsersListProps {
 }
 
 const statusColors: Record<UserStatus, string> = {
-  ACTIVE: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
-  INVITED: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
-  SUSPENDED: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300',
-  DEACTIVATED: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  ACTIVE: 'bg-go-surface text-go',
+  INVITED: 'bg-cyan/10 text-cyan',
+  SUSPENDED: 'bg-hold-surface text-hold',
+  DEACTIVATED: 'bg-muted text-foreground',
 }
 
 /**

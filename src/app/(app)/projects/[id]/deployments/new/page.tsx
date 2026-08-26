@@ -93,12 +93,12 @@ export default async function NewDeploymentPage(props: {
         </Link>
         <div>
           <h1 className="text-3xl font-bold">New Deployment</h1>
-          <p className="text-sm text-gray-600">{project.name}</p>
+          <p className="text-sm text-muted-foreground">{project.name}</p>
         </div>
       </div>
 
       {versions.length === 0 || permitted.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-gray-600">
+        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
           {versions.length === 0 ? (
             <p>
               No published checklist template yet. A draft cannot be deployed — publish a

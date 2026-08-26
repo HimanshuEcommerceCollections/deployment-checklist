@@ -169,6 +169,26 @@
     color-scheme: dark;
   }
 
+  /**
+   * Pin color-scheme on the element for controls whose popups the OS draws
+   * (date and color pickers). Inheritance from <html> is supposed to cover
+   * this, but Windows Chromium was observed rendering a light popup over the
+   * dark theme regardless — the same failure that forced the native <select>s
+   * to be replaced with the in-DOM Radix Select.
+   */
+  input[type='date'],
+  input[type='datetime-local'],
+  input[type='time'],
+  input[type='color'] {
+    color-scheme: light;
+  }
+  .dark input[type='date'],
+  .dark input[type='datetime-local'],
+  .dark input[type='time'],
+  .dark input[type='color'] {
+    color-scheme: dark;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     /* The two radial washes from the reference design. */

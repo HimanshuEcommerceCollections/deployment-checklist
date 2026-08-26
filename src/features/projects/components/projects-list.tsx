@@ -18,7 +18,7 @@ export function ProjectsList({ projects }: ProjectsListProps) {
   if (projects.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center">
-        <p className="text-gray-600">No projects assigned to you yet.</p>
+        <p className="text-muted-foreground">No projects assigned to you yet.</p>
       </div>
     )
   }
@@ -45,7 +45,7 @@ export function ProjectsList({ projects }: ProjectsListProps) {
             <CardContent>
               {/* Member count deliberately omitted — access is org-wide, so it is
                   0 for every project and reads as "nobody has access". */}
-              <div className="flex gap-4 text-sm text-gray-600">
+              <div className="flex gap-4 text-sm text-muted-foreground">
                 <span>{project._count.deployments} deployment(s)</span>
               </div>
             </CardContent>

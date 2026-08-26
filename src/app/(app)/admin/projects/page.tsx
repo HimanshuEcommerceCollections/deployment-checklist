@@ -33,7 +33,7 @@ export default async function AdminProjectsPage() {
 
       {projects.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center space-y-4">
-          <p className="text-gray-600">No projects yet.</p>
+          <p className="text-muted-foreground">No projects yet.</p>
           <Link href="/admin/projects/new">
             <Button>Create First Project</Button>
           </Link>

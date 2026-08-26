@@ -69,13 +69,13 @@ export function SettingsForm({ settings }: SettingsFormProps) {
   return (
     <form action={formAction} className="space-y-8">
       {!state?.ok && state && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="rounded-lg border border-blocked/40 bg-blocked-surface p-4 text-sm text-blocked">
           {state.message}
         </div>
       )}
 
       {state?.ok && (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+        <div className="rounded-lg border border-go/40 bg-go-surface p-4 text-sm text-go">
           Settings updated successfully
         </div>
       )}
@@ -118,7 +118,7 @@ export function SettingsForm({ settings }: SettingsFormProps) {
               disabled={pending}
               className="h-10 w-20"
             />
-            <span className="text-sm text-gray-600">{settings.primaryColor}</span>
+            <span className="text-sm text-muted-foreground">{settings.primaryColor}</span>
           </div>
         </div>
 
@@ -241,8 +241,8 @@ export function SettingsForm({ settings }: SettingsFormProps) {
 
       {/* Email Section */}
       <fieldset className="space-y-4 rounded-lg border p-4 opacity-75">
-        <legend className="text-sm font-semibold text-gray-600">Email (Read-only)</legend>
-        <p className="text-xs text-gray-500">Email is controlled by environment variables. Configure provider in your deployment settings.</p>
+        <legend className="text-sm font-semibold text-muted-foreground">Email (Read-only)</legend>
+        <p className="text-xs text-muted-foreground">Email is controlled by environment variables. Configure provider in your deployment settings.</p>
 
         <div className="grid grid-cols-2 gap-4">
           <div>

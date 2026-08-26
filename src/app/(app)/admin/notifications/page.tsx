@@ -34,25 +34,25 @@ export default async function NotificationsPage() {
   // Every OutboxStatus is listed. A missing key fell through to grey, which made
   // a dead-lettered row look as unremarkable as a queued one.
   const statusColor: Record<string, string> = {
-    PENDING: 'bg-yellow-100 text-yellow-800',
-    SENDING: 'bg-blue-100 text-blue-800',
-    SENT: 'bg-green-100 text-green-800',
-    FAILED: 'bg-red-100 text-red-800',
-    DEAD: 'bg-red-200 text-red-900',
+    PENDING: 'bg-hold-surface text-hold',
+    SENDING: 'bg-cyan/10 text-cyan',
+    SENT: 'bg-go-surface text-go',
+    FAILED: 'bg-blocked-surface text-blocked',
+    DEAD: 'bg-blocked text-destructive-foreground',
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Notifications</h1>
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-muted-foreground">
           <span className="font-medium">{notifications.filter((n) => n.status === 'PENDING').length}</span> pending
         </div>
       </div>
 
       {notifications.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-gray-600">No notifications.</p>
+          <p className="text-muted-foreground">No notifications.</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border">
@@ -76,17 +76,17 @@ export default async function NotificationsPage() {
                     {notif.toAddresses.join(', ') || '—'}
                   </TableCell>
                   <TableCell>
-                    <Badge className={statusColor[notif.status] ?? 'bg-gray-100 text-gray-800'}>
+                    <Badge className={statusColor[notif.status] ?? 'bg-muted text-foreground'}>
                       {notif.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-sm text-gray-600">
+                  <TableCell className="text-sm text-muted-foreground">
                     {new Date(notif.createdAt).toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-sm text-gray-600">
+                  <TableCell className="text-sm text-muted-foreground">
                     {notif.sentAt ? new Date(notif.sentAt).toLocaleString() : '—'}
                   </TableCell>
-                  <TableCell className="max-w-xs truncate text-sm text-red-600">
+                  <TableCell className="max-w-xs truncate text-sm text-blocked">
                     {notif.lastError}
                   </TableCell>
                   <TableCell>

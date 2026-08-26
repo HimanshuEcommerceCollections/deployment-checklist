@@ -39,7 +39,7 @@ export default async function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Organization Settings</h1>
-        <p className="text-gray-600">Manage your organization's configuration</p>
+        <p className="text-muted-foreground">Manage your organization's configuration</p>
       </div>
 
       <SettingsForm settings={settings} />

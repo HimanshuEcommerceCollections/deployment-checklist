@@ -8,28 +8,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DeploymentStatusBadge } from '@/features/deployments/components/deployment-status-badge'
 
 export const metadata = { title: 'Deployments' }
 
 export default async function DeploymentsPage() {
   const deployments = await listAllUserDeployments()
-
-  const statusColor = (status: string) => {
-    switch (status) {
-      case 'DRAFT':
-        return 'bg-gray-100 text-gray-800'
-      case 'IN_PROGRESS':
-        return 'bg-blue-100 text-blue-800'
-      case 'COMPLETED':
-        return 'bg-green-100 text-green-800'
-      case 'FAILED':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -42,7 +27,7 @@ export default async function DeploymentsPage() {
 
       {deployments.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-gray-600">No deployments yet. Start a deployment from a project.</p>
+          <p className="text-muted-foreground">No deployments yet. Start a deployment from a project.</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border">
@@ -76,28 +61,28 @@ export default async function DeploymentsPage() {
                     <TableCell className="font-medium">{dep.project?.name}</TableCell>
                     <TableCell>
                       {dep.title || `${dep.reference} · ${dep.version}`}
-                      <span className="block font-mono text-xs text-gray-500">
+                      <span className="block text-muted-foreground font-mono text-xs">
                         {dep.reference}
                       </span>
                     </TableCell>
                     <TableCell>
-                      <Badge className={statusColor(dep.status)}>{dep.status}</Badge>
+                      <DeploymentStatusBadge status={dep.status} />
                     </TableCell>
                     <TableCell className="text-sm">{dep.environment?.name}</TableCell>
                     <TableCell className="text-sm">
                       <div className="flex items-center gap-2">
-                        <div className="h-2 w-16 rounded-full bg-gray-200">
+                        <div className="h-2 w-16 bg-line rounded-full">
                           <div
-                            className="h-2 rounded-full bg-green-500"
+                            className="h-2 bg-go rounded-full"
                             style={{ width: `${progress}%` }}
                           />
                         </div>
-                        <span className="text-xs text-gray-600">
+                        <span className="text-muted-foreground tabular text-xs">
                           {progress}% ({checkedCount}/{totalCount})
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-gray-600">
+                    <TableCell className="text-muted-foreground text-sm">
                       {new Date(dep.createdAt).toLocaleDateString()}
                     </TableCell>
                     <TableCell>

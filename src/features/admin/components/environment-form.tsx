@@ -45,7 +45,7 @@ export function EnvironmentForm({ environment }: EnvironmentFormProps) {
   return (
     <form action={action} className="space-y-4">
       {!state?.ok && state && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="rounded-lg border border-blocked/40 bg-blocked-surface p-4 text-sm text-blocked">
           {state.message}
         </div>
       )}
@@ -87,7 +87,7 @@ export function EnvironmentForm({ environment }: EnvironmentFormProps) {
               disabled={pending}
               className="h-10 w-20"
             />
-            <span className="text-sm text-gray-600">{environment?.color}</span>
+            <span className="text-sm text-muted-foreground">{environment?.color}</span>
           </div>
         </div>
 

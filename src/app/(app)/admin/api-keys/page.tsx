@@ -30,7 +30,7 @@ export default async function ApiKeysPage() {
 
       {keys.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-gray-600">No API keys yet.</p>
+          <p className="text-muted-foreground">No API keys yet.</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border">
@@ -75,10 +75,10 @@ export default async function ApiKeysPage() {
                         )}
                       </>
                     ) : (
-                      <span className="text-gray-500">Never</span>
+                      <span className="text-muted-foreground">Never</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-sm text-gray-600">
+                  <TableCell className="text-sm text-muted-foreground">
                     {key.lastUsedAt
                       ? new Date(key.lastUsedAt).toLocaleDateString()
                       : 'Never'}

@@ -21,9 +21,9 @@ export interface VersionRow {
 }
 
 const STATUS_STYLES: Record<VersionRow['status'], string> = {
-  DRAFT: 'bg-gray-100 text-gray-800',
-  PUBLISHED: 'bg-green-100 text-green-800',
-  DEPRECATED: 'bg-red-100 text-red-800',
+  DRAFT: 'bg-muted text-foreground',
+  PUBLISHED: 'bg-go-surface text-go',
+  DEPRECATED: 'bg-blocked-surface text-blocked',
 }
 
 /**
@@ -72,19 +72,19 @@ export function TemplateVersionsList({
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="rounded-lg border border-blocked/40 bg-blocked-surface p-4 text-sm text-blocked">
           {error}
         </div>
       )}
 
       {draft && canManage && (
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted-foreground">
           A draft is open. Publish or delete v{draft.version} before starting another.
         </p>
       )}
 
       {versions.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-8 text-center text-gray-600">
+        <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
           No versions yet.
         </div>
       ) : (
@@ -99,7 +99,7 @@ export function TemplateVersionsList({
                     <Badge className="bg-cyan-100 text-cyan-800">Current</Badge>
                   )}
                 </p>
-                <p className="mt-1 text-sm text-gray-600">
+                <p className="mt-1 text-sm text-muted-foreground">
                   {version.sectionCount} section{version.sectionCount === 1 ? '' : 's'} ·{' '}
                   {version.itemCount} item{version.itemCount === 1 ? '' : 's'} ·{' '}
                   {version.requiredCount} required

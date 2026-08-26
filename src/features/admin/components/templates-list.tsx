@@ -20,7 +20,7 @@ export function TemplatesList({ templates }: TemplatesListProps) {
   if (templates.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center">
-        <p className="text-gray-600">No templates yet.</p>
+        <p className="text-muted-foreground">No templates yet.</p>
       </div>
     )
   }
@@ -39,7 +39,7 @@ export function TemplatesList({ templates }: TemplatesListProps) {
           {templates.map((template) => (
             <TableRow key={template.id}>
               <TableCell className="font-medium">{template.name}</TableCell>
-              <TableCell className="text-sm text-gray-600">{template.versions.length} version(s)</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{template.versions.length} version(s)</TableCell>
               <TableCell>
                 <Link href={`/admin/templates/${template.id}`}>
                   <Button variant="ghost" size="sm">Manage</Button>
