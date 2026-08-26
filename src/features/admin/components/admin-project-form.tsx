@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,7 +26,11 @@ export function AdminProjectForm({ project }: AdminProjectFormProps) {
           color: formData.get('color') as string,
           key: formData.get('key') as string,
         })
-        if (result.ok) router.push('/admin/projects')
+        if (result.ok) {
+          toast.success('Project created')
+          router.push('/admin/projects')
+          router.refresh()
+        }
         return result
       }
     : async (_: any, formData: FormData) => {
@@ -35,7 +40,11 @@ export function AdminProjectForm({ project }: AdminProjectFormProps) {
           color: formData.get('color') as string,
           key: formData.get('key') as string,
         })
-        if (result.ok) router.push('/admin/projects')
+        if (result.ok) {
+          toast.success('Project updated')
+          router.push('/admin/projects')
+          router.refresh()
+        }
         return result
       }
 

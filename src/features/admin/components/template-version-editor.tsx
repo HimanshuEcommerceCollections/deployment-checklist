@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
@@ -124,9 +125,9 @@ export function TemplateVersionEditor({
   canDeprecate,
 }: TemplateVersionEditorProps) {
   const router = useRouter()
-  const [pending, startTransition] = useTransition()
+  const [pending, setPending] = useState(false)
+  const [, startRefresh] = useTransition()
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   const [addingSection, setAddingSection] = useState(false)
   const [sectionTitle, setSectionTitle] = useState('')
   const [sectionDescription, setSectionDescription] = useState('')
@@ -146,20 +147,30 @@ export function TemplateVersionEditor({
 
   const readOnly = status !== 'DRAFT' || !canManage
 
-  /** Every mutation funnels through here so none can forget to surface a failure. */
-  function run(action: () => Promise<{ ok: boolean; message?: string }>) {
+  /**
+   * Every mutation funnels through here so none can forget to surface a
+   * failure. Feedback is a toast — visible wherever the person is on a long
+   * template, unlike the old banner at the top of the page — and callers get
+   * the outcome back, so a form can stay open (with its input intact) on
+   * failure and close only on success.
+   */
+  async function run(action: () => Promise<{ ok: boolean; message?: string }>): Promise<boolean> {
     setError(null)
-    setNotice(null)
-    startTransition(async () => {
+    setPending(true)
+    try {
       const result = await action()
       setConfirming(null)
       if (result.ok) {
-        setNotice(result.message ?? null)
-        router.refresh()
-      } else {
-        setError(result.message ?? 'Something went wrong.')
+        toast.success(result.message ?? 'Saved')
+        startRefresh(() => router.refresh())
+        return true
       }
-    })
+      setError(result.message ?? 'Something went wrong.')
+      toast.error(result.message ?? 'Something went wrong.')
+      return false
+    } finally {
+      setPending(false)
+    }
   }
 
   function moveSection(index: number, direction: -1 | 1) {
@@ -227,12 +238,6 @@ export function TemplateVersionEditor({
           {error}
         </div>
       )}
-      {notice && !error && (
-        <div className="rounded-lg border border-go/40 bg-go-surface p-4 text-sm text-go">
-          {notice}
-        </div>
-      )}
-
       {status !== 'DRAFT' && (
         <div className="rounded-lg border border-hold/40 bg-hold-surface p-4 text-sm text-hold">
           This version is {status.toLowerCase()} and cannot be edited — deployments snapshot their
@@ -320,19 +325,22 @@ export function TemplateVersionEditor({
                 <Button
                   size="sm"
                   disabled={pending || !sectionTitle.trim()}
-                  onClick={() => {
-                    run(() =>
+                  onClick={async () => {
+                    // Close only on success — a failure keeps the typed input.
+                    const ok = await run(() =>
                       createTemplateSection(templateId, versionId, {
                         title: sectionTitle.trim(),
                         description: sectionDescription.trim() || undefined,
                       }),
                     )
-                    setSectionTitle('')
-                    setSectionDescription('')
-                    setAddingSection(false)
+                    if (ok) {
+                      setSectionTitle('')
+                      setSectionDescription('')
+                      setAddingSection(false)
+                    }
                   }}
                 >
-                  Add section
+                  {pending ? 'Adding…' : 'Add section'}
                 </Button>
                 <Button
                   size="sm"

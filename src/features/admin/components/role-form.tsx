@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,7 +29,11 @@ export function RoleForm({ role }: RoleFormProps) {
           permissions,
           isAssignableGlobally: formData.get('isAssignableGlobally') === 'on',
         })
-        if (result.ok) router.push('/admin/roles')
+        if (result.ok) {
+          toast.success('Role created')
+          router.push('/admin/roles')
+          router.refresh()
+        }
         return result
       }
     : async (_: any, formData: FormData) => {
@@ -40,7 +45,11 @@ export function RoleForm({ role }: RoleFormProps) {
           permissions,
           isAssignableGlobally: formData.get('isAssignableGlobally') === 'on',
         })
-        if (result.ok) router.push('/admin/roles')
+        if (result.ok) {
+          toast.success('Role updated')
+          router.push('/admin/roles')
+          router.refresh()
+        }
         return result
       }
 
