@@ -4,7 +4,7 @@ import { ValidationError } from '@/domain/shared/errors'
 import { AUDIT_ACTIONS } from '@/lib/audit/actions'
 import { audit } from '@/lib/audit/audit-service'
 import { type RequestContext, requirePermission } from '@/lib/authz/authorize'
-import { PERMISSIONS } from '@/lib/authz/permissions'
+import { PERMISSIONS, WILDCARD } from '@/lib/authz/permissions'
 import { db } from '@/lib/db/prisma'
 
 import type { CreateRoleInput, UpdateRoleInput } from '../schemas/roles.schema'
@@ -90,13 +90,19 @@ export class RolesService {
     /// references it. Name, description and permissions stay editable.
     const key = current.isSystem ? current.key : input.key
 
+    /// A super-admin role's grant is the wildcard, which the editor's catalog
+    /// checkboxes cannot represent — every save would submit [] and silently
+    /// strip `*` (it did, on 2026-08-31). The flag and the array must agree, so
+    /// the wildcard is forced back regardless of what the form sent.
+    const permissions = current.isSuperAdmin ? [WILDCARD] : input.permissions
+
     const role = await db.role.update({
       where: { id },
       data: {
         name: input.name,
         key,
         description: input.description,
-        permissions: input.permissions,
+        permissions,
         isAssignableGlobally: input.isAssignableGlobally,
         updatedById: ctx.actorId,
       },

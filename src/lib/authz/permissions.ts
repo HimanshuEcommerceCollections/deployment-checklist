@@ -279,13 +279,15 @@ export const GLOBAL_ONLY_PERMISSIONS: ReadonlySet<string> = new Set(
  * Seeded once. After seeding these are ordinary documents: an admin can change
  * Engineer's permissions, or add a role of their own, without touching this file.
  *
- * ── Why five, and why these five ─────────────────────────────────────────────
+ * ── Why six, and why these six ───────────────────────────────────────────────
  * Roles are named after the DECISIONS a person is trusted to make, not the
  * resources they touch — resources are what permissions are for. The earlier set
  * (developer / qa / devops / release-manager) split three roles across what was
  * really two permissions, so `devops` folded into Release Manager and `developer`
  * became Engineer. `viewer` is new: read-only had no expression at all, so
- * stakeholders were given a role that could tick items.
+ * stakeholders were given a role that could tick items. `admin` split from
+ * `super-admin` (2026-09): day-to-day administration is a different trust
+ * decision from deciding who is in the organization at all.
  *
  * Only the super-admin role holds a wildcard. Ordinary roles list permissions
  * explicitly, because a role granting `deployment.*` silently acquires every
@@ -294,13 +296,56 @@ export const GLOBAL_ONLY_PERMISSIONS: ReadonlySet<string> = new Set(
  */
 export const SEED_ROLES = [
   {
-    key: 'admin',
-    name: 'Admin',
-    description: 'Unrestricted access to every project and setting.',
+    key: 'super-admin',
+    name: 'Super Admin',
+    description: 'Unrestricted access to everything, including user and role management.',
     color: '#ef5f6b',
     permissions: [WILDCARD],
     isSystem: true,
     isSuperAdmin: true,
+  },
+  {
+    key: 'admin',
+    name: 'Admin',
+    description: 'Administers everything except users and roles.',
+    color: '#e8874f',
+    isSystem: true,
+    /**
+     * Everything in the catalog EXCEPT the users group (`user.*`, `role.*`).
+     * Explicit rather than a wildcard, per the note above — but `isSystem`, so
+     * the seed re-syncs this list on every deploy and a permission added to the
+     * catalog later reaches Admin through code review, not silently.
+     *
+     * `project.members.manage` stays: assigning people to projects is project
+     * administration. Inviting them into the organization (`user.invite`) is not.
+     *
+     * NOTE: no wildcard means project-scoped permissions still apply only to
+     * assigned projects — an Admin sees the projects they are a member of.
+     */
+    permissions: [
+      PERMISSIONS.project.read, PERMISSIONS.project.create, PERMISSIONS.project.edit,
+      PERMISSIONS.project.delete, PERMISSIONS.project.restore,
+      PERMISSIONS.project.membersManage, PERMISSIONS.project.templateAssign,
+      PERMISSIONS.template.read, PERMISSIONS.template.manage, PERMISSIONS.template.publish,
+      PERMISSIONS.template.delete, PERMISSIONS.template.restore, PERMISSIONS.template.deprecate,
+      PERMISSIONS.deployment.read, PERMISSIONS.deployment.create, PERMISSIONS.deployment.edit,
+      PERMISSIONS.deployment.start, PERMISSIONS.deployment.complete, PERMISSIONS.deployment.fail,
+      PERMISSIONS.deployment.cancel, PERMISSIONS.deployment.rollback,
+      PERMISSIONS.deployment.delete, PERMISSIONS.deployment.restore,
+      PERMISSIONS.deployment.export, PERMISSIONS.deployment.production,
+      PERMISSIONS.deployment.execute, PERMISSIONS.deployment.itemSkip,
+      PERMISSIONS.deployment.itemOverride, PERMISSIONS.deployment.itemUncheckOther,
+      PERMISSIONS.comment.read, PERMISSIONS.comment.create, PERMISSIONS.comment.editOwn,
+      PERMISSIONS.comment.deleteOwn, PERMISSIONS.comment.moderate,
+      PERMISSIONS.admin.access,
+      PERMISSIONS.audit.read, PERMISSIONS.audit.export,
+      PERMISSIONS.environment.manage,
+      PERMISSIONS.settings.read, PERMISSIONS.settings.manage,
+      PERMISSIONS.notification.read, PERMISSIONS.notification.retry,
+      // Deliberately absent: user.read, user.invite, user.edit, user.suspend,
+      // user.delete, user.restore, role.read, role.manage. Deciding who belongs
+      // to the organization is what separates Super Admin from this role.
+    ],
   },
   {
     key: 'release-manager',

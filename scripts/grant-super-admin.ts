@@ -31,8 +31,8 @@ import { SEED_ROLES, WILDCARD } from '../src/lib/authz/permissions'
 
 const db = new PrismaClient()
 
-/** The `admin` entry in SEED_ROLES is the single source of truth for the role. */
-const ADMIN_ROLE = SEED_ROLES.find((role) => role.key === 'admin')!
+/** The `super-admin` entry in SEED_ROLES is the single source of truth for the role. */
+const ADMIN_ROLE = SEED_ROLES.find((role) => role.key === 'super-admin')!
 
 async function main(): Promise<void> {
   const email = (process.argv[2] ?? process.env.SEED_ADMIN_EMAIL ?? 'admin@example.com')

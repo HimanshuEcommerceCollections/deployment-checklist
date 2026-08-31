@@ -516,6 +516,74 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    name: '0011-split-super-admin-and-admin-roles',
+    /**
+     * The wildcard role's key moves from `admin` to `super-admin`, freeing
+     * `admin` for a new seeded role that administers everything EXCEPT users and
+     * roles (docs: SEED_ROLES in src/lib/authz/permissions.ts).
+     *
+     * The re-key must run before anything upserts the new SEED_ROLES: the seed
+     * upserts by (organizationId, key), so with the old row still on `admin` it
+     * would overwrite the wildcard role's name and permissions with the new
+     * Admin definition — demoting every holder except for the isSuperAdmin flag.
+     *
+     * Grants are untouched: User.roleIds and Membership.roleId reference the
+     * role's id, not its key, so holders keep exactly what they had.
+     *
+     * Also restores `permissions: ["*"]` on the wildcard role. The role editor
+     * could not represent the wildcard and a save on 2026-08-31 stripped it to
+     * [] — harmless while isSuperAdmin short-circuits can(), but the flag and
+     * the array must agree.
+     */
+    up: async (client) => {
+      const organizations = await client.organization.findMany({ select: { id: true } })
+
+      for (const org of organizations) {
+        const legacy = await client.role.findFirst({
+          where: { organizationId: org.id, key: 'admin', isSuperAdmin: true, deletedAt: null },
+          select: { id: true },
+        })
+
+        if (legacy) {
+          await client.role.update({
+            where: { id: legacy.id },
+            data: { key: 'super-admin', name: 'Super Admin', permissions: ['*'] },
+          })
+          console.log('      re-keyed the wildcard role: admin → super-admin')
+        }
+
+        for (const key of ['super-admin', 'admin']) {
+          const seed = SEED_ROLES.find((role) => role.key === key)
+          if (!seed) throw new Error(`SEED_ROLES no longer defines "${key}"`)
+
+          await client.role.upsert({
+            where: { organizationId_key: { organizationId: org.id, key: seed.key } },
+            create: {
+              organizationId: org.id,
+              key: seed.key,
+              name: seed.name,
+              description: seed.description,
+              color: seed.color,
+              permissions: [...seed.permissions],
+              isSystem: 'isSystem' in seed ? seed.isSystem : false,
+              isSuperAdmin: 'isSuperAdmin' in seed ? seed.isSuperAdmin : false,
+              isDefault: 'isDefault' in seed ? seed.isDefault : false,
+              deletedAt: null,
+            },
+            // Same rule as the seed: system roles stay in sync with code.
+            update: {
+              name: seed.name,
+              description: seed.description,
+              permissions: [...seed.permissions],
+              deletedAt: null,
+            },
+          })
+        }
+        console.log('      seeded/synced the super-admin and admin roles')
+      }
+    },
+  },
 ]
 
 /**

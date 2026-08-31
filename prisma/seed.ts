@@ -158,7 +158,7 @@ async function main() {
   // ── Admin user ───────────────────────────────────────────────────────────
   const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? 'admin@example.com').toLowerCase()
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'ChangeMeImmediately!2026'
-  const adminRoleId = rolesByKey.get('admin')!
+  const adminRoleId = rolesByKey.get('super-admin')!
 
   const existingAdmin = await db.user.findUnique({ where: { email: adminEmail } })
 

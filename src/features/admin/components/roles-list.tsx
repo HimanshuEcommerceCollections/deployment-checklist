@@ -41,7 +41,9 @@ export function RolesList({ roles }: RolesListProps) {
             <TableRow key={role.id}>
               <TableCell className="font-medium">{role.name}</TableCell>
               <TableCell className="font-mono text-sm">{role.key}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">{role.permissions.length} permissions</TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                {role.isSuperAdmin ? 'All permissions' : `${role.permissions.length} permissions`}
+              </TableCell>
               <TableCell>
                 <Link href={`/admin/roles/${role.id}`}>
                   <Button variant="ghost" size="sm">Edit</Button>

@@ -66,8 +66,9 @@ function ctxForRole(key: string, assignedProjectIds: string[] = [PROJECT]): Requ
 }
 
 describe('seeded roles', () => {
-  it('defines exactly the five documented roles', () => {
+  it('defines exactly the six documented roles', () => {
     expect(SEED_ROLES.map((r) => r.key)).toEqual([
+      'super-admin',
       'admin',
       'release-manager',
       'engineer',
@@ -93,7 +94,7 @@ describe('seeded roles', () => {
     // bootstrap role is the one place that behaviour is wanted.
     for (const role of SEED_ROLES) {
       const wildcards = role.permissions.filter((p) => p === WILDCARD || p.endsWith('.*'))
-      if (role.key === 'admin') {
+      if (role.key === 'super-admin') {
         expect(wildcards).toEqual([WILDCARD])
       } else {
         expect(wildcards, `${role.key} must list permissions explicitly`).toEqual([])
@@ -105,14 +106,26 @@ describe('seeded roles', () => {
     const superAdmins = SEED_ROLES.filter((r) => 'isSuperAdmin' in r && r.isSuperAdmin)
     const defaults = SEED_ROLES.filter((r) => 'isDefault' in r && r.isDefault)
 
-    expect(superAdmins.map((r) => r.key)).toEqual(['admin'])
+    expect(superAdmins.map((r) => r.key)).toEqual(['super-admin'])
     expect(defaults.map((r) => r.key)).toEqual(['engineer'])
+  })
+
+  it('grants Admin everything in the catalog except users and roles', () => {
+    const admin = SEED_ROLES.find((r) => r.key === 'admin')!
+    const granted = new Set<string>(admin.permissions)
+
+    for (const key of ALL_PERMISSION_KEYS) {
+      const isUserManagement = key.startsWith('user.') || key.startsWith('role.')
+      expect(granted.has(key), `admin ${isUserManagement ? 'must not grant' : 'must grant'} ${key}`).toBe(
+        !isUserManagement,
+      )
+    }
   })
 })
 
 describe('role capabilities', () => {
   it('lets everyone but Viewer tick checklist items', () => {
-    for (const key of ['admin', 'release-manager', 'engineer', 'qa']) {
+    for (const key of ['super-admin', 'admin', 'release-manager', 'engineer', 'qa']) {
       expect(can(ctxForRole(key), PERMISSIONS.deployment.execute, { projectId: PROJECT }), key).toBe(
         true,
       )
@@ -174,6 +187,33 @@ describe('role capabilities', () => {
     ).toBe(true)
   })
 
+  it('keeps user management out of Admin', () => {
+    const ctx = ctxForRole('admin')
+
+    // The one thing separating Admin from Super Admin.
+    for (const permission of [
+      PERMISSIONS.user.read,
+      PERMISSIONS.user.invite,
+      PERMISSIONS.user.edit,
+      PERMISSIONS.user.suspend,
+      PERMISSIONS.role.read,
+      PERMISSIONS.role.manage,
+    ]) {
+      expect(can(ctx, permission), permission).toBe(false)
+    }
+
+    // Everything else administrative stays.
+    expect(can(ctx, PERMISSIONS.admin.access)).toBe(true)
+    expect(can(ctx, PERMISSIONS.settings.manage)).toBe(true)
+    expect(can(ctx, PERMISSIONS.template.publish)).toBe(true)
+    expect(can(ctx, PERMISSIONS.environment.manage)).toBe(true)
+
+    // No wildcard, so project visibility still comes from assignment.
+    expect(projectFilter(ctxForRole('admin', []), PERMISSIONS.project.read, 'id')).toEqual({
+      id: { in: [] },
+    })
+  })
+
   it('keeps organisation administration out of Release Manager', () => {
     const ctx = ctxForRole('release-manager')
 
@@ -228,7 +268,7 @@ describe('project visibility (docs/14 §14.7)', () => {
   it('leaves the super-admin unfiltered without any assignment', () => {
     // The wildcard is organization-scoped and `can()` short-circuits on it, so the
     // bootstrap administrator never needs assigning to see the organization.
-    expect(projectFilter(ctxForRole('admin', []), PERMISSIONS.project.read, 'id')).toEqual({})
+    expect(projectFilter(ctxForRole('super-admin', []), PERMISSIONS.project.read, 'id')).toEqual({})
   })
 
   it('matches no rows for a role with no assignment', () => {

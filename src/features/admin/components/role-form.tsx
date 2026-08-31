@@ -83,9 +83,16 @@ export function RoleForm({ role }: RoleFormProps) {
           defaultValue={role?.key}
           required
           maxLength={50}
-          pattern="^[a-z0-9_]+$"
+          pattern={role?.isSystem ? undefined : '^[a-z0-9_-]+$'}
+          readOnly={role?.isSystem}
           disabled={pending}
+          aria-describedby={role?.isSystem ? 'key-locked' : undefined}
         />
+        {role?.isSystem && (
+          <p id="key-locked" className="text-muted-foreground mt-1 text-xs">
+            System role — seeding and upgrades reference this key, so it cannot be changed.
+          </p>
+        )}
       </div>
 
       <div>
@@ -101,20 +108,31 @@ export function RoleForm({ role }: RoleFormProps) {
 
       <fieldset className="border-t pt-6">
         <legend className="font-medium">Permissions</legend>
-        <div className="mt-4 grid max-h-60 grid-cols-2 gap-3 overflow-y-auto">
-          {ALL_PERMISSIONS.map((perm) => (
-            <label key={perm} className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="permissions"
-                value={perm}
-                defaultChecked={role?.permissions.includes(perm)}
-                disabled={pending}
-              />
-              <span className="text-sm">{perm}</span>
-            </label>
-          ))}
-        </div>
+        {role?.isSuperAdmin ? (
+          /* The grant is the wildcard, which these checkboxes cannot represent —
+             rendering them all unticked made a save silently strip it. The server
+             preserves the wildcard for super-admin roles regardless. */
+          <p className="text-muted-foreground mt-4 text-sm">
+            This role grants <span className="font-mono">every permission</span>, including
+            anything added in future releases. Its grant cannot be edited — create a separate
+            role for anything narrower.
+          </p>
+        ) : (
+          <div className="mt-4 grid max-h-60 grid-cols-2 gap-3 overflow-y-auto">
+            {ALL_PERMISSIONS.map((perm) => (
+              <label key={perm} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="permissions"
+                  value={perm}
+                  defaultChecked={role?.permissions.includes(perm)}
+                  disabled={pending}
+                />
+                <span className="text-sm">{perm}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </fieldset>
 
       <label className="flex items-center gap-2">
