@@ -10,12 +10,19 @@ import {
   UpdateDeploymentItemSchema,
   CreateCommentSchema,
   TransitionDeploymentSchema,
+  ListProjectDeploymentsSchema,
 } from '../schemas/deployments.schema'
 import { deploymentsService } from '../server/deployments-service'
 
-export async function listProjectDeployments(projectId: string) {
+export async function listProjectDeployments(projectId: string, query?: unknown) {
   const ctx = await getRequestContext()
-  return deploymentsService.listProjectDeployments(ctx, projectId)
+  // URL search params, so parse defensively — the schema strips and defaults
+  // rather than throwing, and a mangled param renders page 1 instead of a 500.
+  return deploymentsService.listProjectDeployments(
+    ctx,
+    projectId,
+    ListProjectDeploymentsSchema.parse(query ?? {}),
+  )
 }
 
 export async function getDeployment(id: string) {

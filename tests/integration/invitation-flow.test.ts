@@ -33,7 +33,7 @@ beforeAll(async () => {
   const organization = await db.organization.findFirstOrThrow({ where: { slug: 'default' } })
   organizationId = organization.id
 
-  const adminRole = await db.role.findFirstOrThrow({ where: { organizationId, key: 'admin' } })
+  const adminRole = await db.role.findFirstOrThrow({ where: { organizationId, key: 'super-admin' } })
   // 'engineer' replaced 'developer' when the seeded roles were consolidated.
   const engineerRole = await db.role.findFirstOrThrow({ where: { organizationId, key: 'engineer' } })
   engineerRoleId = engineerRole.id
@@ -46,7 +46,7 @@ beforeAll(async () => {
     actorEmail: admin.email,
     actorName: admin.name,
     organizationId,
-    roleKeys: ['admin'],
+    roleKeys: ['super-admin'],
     permissions: { global: new Set(['*']), byProject: new Map(), isSuperAdmin: true },
     requestId: 'test-request',
     ip: '203.0.113.10',
@@ -287,7 +287,7 @@ describe('invite → accept', () => {
    * yourself an admin: invite a throwaway address as Admin, accept it, done.
    */
   it('refuses to grant a role exceeding the inviter’s own access', async () => {
-    const adminRole = await db.role.findFirstOrThrow({ where: { organizationId, key: 'admin' } })
+    const adminRole = await db.role.findFirstOrThrow({ where: { organizationId, key: 'super-admin' } })
 
     const limitedCtx: RequestContext = {
       ...adminCtx,

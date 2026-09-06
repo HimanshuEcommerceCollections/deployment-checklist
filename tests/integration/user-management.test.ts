@@ -99,7 +99,7 @@ beforeAll(async () => {
   const admin = await db.user.findFirstOrThrow({
     where: { organizationId, email: adminEmail, deletedAt: null },
   })
-  adminCtx = ctxFor('admin', admin.id)
+  adminCtx = ctxFor('super-admin', admin.id)
 
   superRoleId = (
     await db.role.findFirstOrThrow({

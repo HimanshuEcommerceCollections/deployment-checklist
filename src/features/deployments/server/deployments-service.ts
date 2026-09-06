@@ -27,10 +27,13 @@ import { isUniqueViolation } from '@/lib/db/errors'
 import { notifications } from '@/lib/notifications/dispatcher'
 import type { NotificationTemplateKey } from '@/lib/notifications/types'
 
+import { fromZonedTime } from 'date-fns-tz'
+
 import type {
   CreateDeploymentInput,
   UpdateDeploymentItemInput,
   CreateCommentInput,
+  ListProjectDeploymentsInput,
 } from '../schemas/deployments.schema'
 
 const AUDIT_FOR: Record<DeploymentTransition, AuditAction> = {
@@ -76,24 +79,85 @@ function visibleProject(ctx: RequestContext, permission: string) {
   }
 }
 
+/**
+ * The two reading of a run's status the index filters by. "History" is every
+ * terminal state, not just COMPLETED — a failed or cancelled run is part of the
+ * record, and hiding it from both tabs would make it unfindable.
+ */
+const ONGOING_STATUSES: DeploymentStatus[] = ['DRAFT', 'IN_PROGRESS', 'BLOCKED']
+const HISTORY_STATUSES: DeploymentStatus[] = ['COMPLETED', 'FAILED', 'CANCELLED', 'ROLLED_BACK']
+
+/**
+ * A `YYYY-MM-DD` picked in a date input means that day where the ACTOR is, so
+ * the boundary is computed in their timezone — `new Date('2026-09-07')` would
+ * pin it to UTC and shift every edge by the viewer's offset. Falls back to UTC
+ * when the stored timezone is unusable rather than failing the whole query.
+ */
+function dayBoundary(date: string, time: string, zone: string): Date {
+  try {
+    const instant = fromZonedTime(`${date}T${time}`, zone || 'UTC')
+    if (!Number.isNaN(instant.getTime())) return instant
+  } catch {
+    // fall through to UTC
+  }
+  return new Date(`${date}T${time}Z`)
+}
+
 export class DeploymentsService {
-  async listProjectDeployments(ctx: RequestContext, projectId: string) {
+  async listProjectDeployments(
+    ctx: RequestContext,
+    projectId: string,
+    query: ListProjectDeploymentsInput = { page: 1, pageSize: 20 },
+  ) {
     /// The project is named, so check it exactly — an unscoped check would reject
     /// anyone whose access to it came from a project assignment.
     requirePermission(ctx, PERMISSIONS.deployment.read, { projectId })
 
-    return db.deploymentRun.findMany({
-      where: {
-        projectId,
-        project: visibleProject(ctx, PERMISSIONS.deployment.read),
-        deletedAt: null,
-      },
-      include: {
-        environment: true,
-        _count: { select: { itemStates: true, comments: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
+    const createdAt: { gte?: Date; lte?: Date } = {}
+    if (query.from) createdAt.gte = dayBoundary(query.from, '00:00:00.000', ctx.timezone)
+    // Inclusive: "to 2026-09-07" means everything created ON that day too.
+    if (query.to) createdAt.lte = dayBoundary(query.to, '23:59:59.999', ctx.timezone)
+
+    const where = {
+      projectId,
+      project: visibleProject(ctx, PERMISSIONS.deployment.read),
+      deletedAt: null,
+      ...(query.scope
+        ? { status: { in: query.scope === 'ongoing' ? ONGOING_STATUSES : HISTORY_STATUSES } }
+        : {}),
+      ...(query.from || query.to ? { createdAt } : {}),
+      /**
+       * Search matches the columns the table actually shows (reference, title,
+       * version) rather than the denormalised `searchText`, which never learned
+       * the run's sequence number — "APEX-3" must find APEX-3.
+       */
+      ...(query.q
+        ? {
+            OR: [
+              { reference: { contains: query.q, mode: 'insensitive' as const } },
+              { title: { contains: query.q, mode: 'insensitive' as const } },
+              { version: { contains: query.q, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    }
+
+    // The count shares `where`, so "1–20 of N" always describes the filtered set.
+    const [rows, total] = await Promise.all([
+      db.deploymentRun.findMany({
+        where,
+        include: {
+          environment: true,
+          _count: { select: { itemStates: true, comments: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      db.deploymentRun.count({ where }),
+    ])
+
+    return { rows, total, page: query.page, pageSize: query.pageSize }
   }
 
   async getDeployment(ctx: RequestContext, id: string) {

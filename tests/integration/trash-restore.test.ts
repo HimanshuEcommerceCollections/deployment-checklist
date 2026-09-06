@@ -50,7 +50,7 @@ function ctxFor(roleKey: string, actorId: string, orgId = organizationId): Reque
 /** A context with an explicit permission set, for testing a single missing grant. */
 function ctxWithPermissions(permissions: string[]): RequestContext {
   return {
-    ...ctxFor('admin', adminId),
+    ...ctxFor('super-admin', adminId),
     roleKeys: ['scoped-test'],
     permissions: {
       global: new Set(permissions),
@@ -73,7 +73,7 @@ beforeAll(async () => {
   const admin = await db.user.findFirstOrThrow({ where: { organizationId, deletedAt: null } })
   adminId = admin.id
   adminName = admin.name
-  adminCtx = ctxFor('admin', admin.id)
+  adminCtx = ctxFor('super-admin', admin.id)
 
   const other = await db.organization.upsert({
     where: { slug: 'trash-test-tenant' },
@@ -161,7 +161,7 @@ describe('tenant scoping on delete', () => {
 
     // Same permissions, same id, different tenant. Before the scope check this
     // deleted the row: `update({ where: { id } })` verifies nothing else.
-    const foreignCtx = ctxFor('admin', adminId, otherOrganizationId)
+    const foreignCtx = ctxFor('super-admin', adminId, otherOrganizationId)
 
     await expect(adminProjectsService.deleteProject(foreignCtx, project.id)).rejects.toThrow()
 
@@ -173,7 +173,7 @@ describe('tenant scoping on delete', () => {
     const project = await newProject(`Cross Tenant Trash ${Date.now()}`)
     await adminProjectsService.deleteProject(adminCtx, project.id)
 
-    const foreignCtx = ctxFor('admin', adminId, otherOrganizationId)
+    const foreignCtx = ctxFor('super-admin', adminId, otherOrganizationId)
     const trash = await trashService.listTrash(foreignCtx)
 
     expect(trash.some((t) => t.id === project.id)).toBe(false)

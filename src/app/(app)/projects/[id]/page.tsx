@@ -54,14 +54,17 @@ export default async function ProjectPage(props: { params: Promise<{ id: string 
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Deployments</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{project._count.deployments}</p>
-          </CardContent>
-        </Card>
+        <Link href={`/projects/${project.id}/deployments`} className="block">
+          <Card className="cursor-pointer transition-shadow hover:shadow-lg">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">Deployments</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{project._count.deployments}</p>
+              <p className="text-muted-foreground mt-1 text-xs">View ongoing and history →</p>
+            </CardContent>
+          </Card>
+        </Link>
 
       </div>
 
