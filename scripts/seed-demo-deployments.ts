@@ -218,6 +218,9 @@ async function run() {
         createdById: admin.id,
         createdAt,
         searchText: [versionLabel, title, PROJECT_KEY, environment.name].filter(Boolean).join(' '),
+        // Raw PrismaClient omits unset optionals, and Mongo's `deletedAt: null`
+        // filter only matches a PRESENT null — see the soft-delete extension.
+        deletedAt: null,
       },
     })
 
