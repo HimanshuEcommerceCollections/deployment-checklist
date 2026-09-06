@@ -17,6 +17,7 @@ import {
   statusLabel,
 } from '@/features/deployments/components/deployment-status-badge'
 import { AddSectionControl } from '@/features/deployments/components/deployment-checklist-editor'
+import { DeploymentViewTabs } from '@/features/deployments/components/deployment-view-tabs'
 import { deploymentsService } from '@/features/deployments/server/deployments-service'
 import { can } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
@@ -200,12 +201,13 @@ export default async function DeploymentChecklistPage(props: {
           items={[
             { label: deployment.project.name, href: `/projects/${params.id}` },
             { label: 'Deployments', href: `/projects/${params.id}/deployments` },
-            {
-              label: deployment.reference,
-              href: `/projects/${params.id}/deployments/${params.deploymentId}`,
-            },
-            { label: 'Checklist' },
+            { label: deployment.reference },
           ]}
+        />
+        <DeploymentViewTabs
+          projectId={params.id}
+          deploymentId={params.deploymentId}
+          active="checklist"
         />
         <div className="no-print">
           <p className="mb-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">

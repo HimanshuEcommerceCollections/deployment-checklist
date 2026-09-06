@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation'
 
 import { Badge } from '@/components/ui/badge'
 import { Breadcrumbs } from '@/components/ui/breadcrumbs'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   type ChecklistSnapshot,
@@ -12,6 +11,7 @@ import {
 } from '@/features/deployments/checklist-snapshot'
 import { DeploymentComments } from '@/features/deployments/components/deployment-comments'
 import { DeploymentStatusActions } from '@/features/deployments/components/deployment-status-actions'
+import { DeploymentViewTabs } from '@/features/deployments/components/deployment-view-tabs'
 import { DeploymentStatusBadge } from '@/features/deployments/components/deployment-status-badge'
 import { deploymentsService } from '@/features/deployments/server/deployments-service'
 import { formatDuration, readiness } from '@/domain/deployments/lifecycle'
@@ -77,32 +77,32 @@ export default async function DeploymentPage(props: {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-2">
-          <Breadcrumbs
-            items={[
-              { label: deployment.project.name, href: `/projects/${params.id}` },
-              { label: 'Deployments', href: `/projects/${params.id}/deployments` },
-              { label: deployment.reference },
-            ]}
-          />
-          <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            {deployment.reference} · {deployment.version}
-            {snapshot.templateName ? ` · ${snapshot.templateName} v${snapshot.version}` : ''}
-          </p>
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">{heading}</h1>
-            <DeploymentStatusBadge status={deployment.status} />
-            {deployment.isProduction && (
-              <Badge className="bg-blocked-surface text-blocked">
-                Production
-              </Badge>
-            )}
-          </div>
+      <div className="space-y-2">
+        <Breadcrumbs
+          items={[
+            { label: deployment.project.name, href: `/projects/${params.id}` },
+            { label: 'Deployments', href: `/projects/${params.id}/deployments` },
+            { label: deployment.reference },
+          ]}
+        />
+        <DeploymentViewTabs
+          projectId={params.id}
+          deploymentId={params.deploymentId}
+          active="overview"
+        />
+        <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+          {deployment.reference} · {deployment.version}
+          {snapshot.templateName ? ` · ${snapshot.templateName} v${snapshot.version}` : ''}
+        </p>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold">{heading}</h1>
+          <DeploymentStatusBadge status={deployment.status} />
+          {deployment.isProduction && (
+            <Badge className="bg-blocked-surface text-blocked">
+              Production
+            </Badge>
+          )}
         </div>
-        <Link href={checklistHref}>
-          <Button>Open checklist</Button>
-        </Link>
       </div>
 
       {transitions.length > 0 && (
