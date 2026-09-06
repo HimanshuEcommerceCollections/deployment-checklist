@@ -1,0 +1,5 @@
+# The Vercel CLI does NOT respect .gitignore for uploads — without this file it
+# ships everything except its built-in defaults (.git, node_modules, .next, …).
+# On 2026-09-07 that meant trying to read the local dev database's WiredTiger
+# files, which a running mongod holds locked → every deploy died with EBUSY.
+.mongo
