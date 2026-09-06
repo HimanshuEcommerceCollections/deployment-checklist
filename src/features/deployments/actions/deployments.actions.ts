@@ -11,6 +11,10 @@ import {
   CreateCommentSchema,
   TransitionDeploymentSchema,
   ListProjectDeploymentsSchema,
+  ChecklistSectionInputSchema,
+  UpdateChecklistSectionSchema,
+  ChecklistItemInputSchema,
+  UpdateChecklistItemSchema,
 } from '../schemas/deployments.schema'
 import { deploymentsService } from '../server/deployments-service'
 
@@ -84,6 +88,109 @@ export async function transitionDeployment(
     return ok({ status: run.status })
   } catch (error) {
     return toActionResult(error, { action: 'transitionDeployment' })
+  }
+}
+
+/** Both renderings of the tailored run — the checklist and the overview. */
+function revalidateChecklist(projectId: string, deploymentId: string) {
+  revalidatePath(`/projects/${projectId}/deployments/${deploymentId}/checklist`)
+  revalidatePath(`/projects/${projectId}/deployments/${deploymentId}`)
+  revalidatePath(`/projects/${projectId}/deployments`)
+}
+
+export async function addChecklistSection(
+  deploymentId: string,
+  input: unknown,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const ctx = await getRequestContext()
+    const parsed = ChecklistSectionInputSchema.parse(input)
+    const result = await deploymentsService.addChecklistSection(ctx, deploymentId, parsed)
+    revalidateChecklist(result.projectId, deploymentId)
+    return ok({ id: result.id })
+  } catch (error) {
+    return toActionResult(error, { action: 'addChecklistSection' })
+  }
+}
+
+export async function updateChecklistSection(
+  deploymentId: string,
+  sectionId: string,
+  input: unknown,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const ctx = await getRequestContext()
+    const parsed = UpdateChecklistSectionSchema.parse(input)
+    const result = await deploymentsService.updateChecklistSection(
+      ctx,
+      deploymentId,
+      sectionId,
+      parsed,
+    )
+    revalidateChecklist(result.projectId, deploymentId)
+    return ok({ id: result.id })
+  } catch (error) {
+    return toActionResult(error, { action: 'updateChecklistSection' })
+  }
+}
+
+export async function removeChecklistSection(
+  deploymentId: string,
+  sectionId: string,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const ctx = await getRequestContext()
+    const result = await deploymentsService.removeChecklistSection(ctx, deploymentId, sectionId)
+    revalidateChecklist(result.projectId, deploymentId)
+    return ok({ id: result.id })
+  } catch (error) {
+    return toActionResult(error, { action: 'removeChecklistSection' })
+  }
+}
+
+export async function addChecklistItem(
+  deploymentId: string,
+  sectionId: string,
+  input: unknown,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const ctx = await getRequestContext()
+    const parsed = ChecklistItemInputSchema.parse(input)
+    const result = await deploymentsService.addChecklistItem(ctx, deploymentId, sectionId, parsed)
+    revalidateChecklist(result.projectId, deploymentId)
+    return ok({ id: result.id })
+  } catch (error) {
+    return toActionResult(error, { action: 'addChecklistItem' })
+  }
+}
+
+export async function updateChecklistItem(
+  deploymentId: string,
+  itemId: string,
+  input: unknown,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const ctx = await getRequestContext()
+    const parsed = UpdateChecklistItemSchema.parse(input)
+    const result = await deploymentsService.updateChecklistItem(ctx, deploymentId, itemId, parsed)
+    revalidateChecklist(result.projectId, deploymentId)
+    return ok({ id: result.id })
+  } catch (error) {
+    return toActionResult(error, { action: 'updateChecklistItem' })
+  }
+}
+
+export async function removeChecklistItem(
+  deploymentId: string,
+  itemId: string,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const ctx = await getRequestContext()
+    const result = await deploymentsService.removeChecklistItem(ctx, deploymentId, itemId)
+    revalidateChecklist(result.projectId, deploymentId)
+    return ok({ id: result.id })
+  } catch (error) {
+    return toActionResult(error, { action: 'removeChecklistItem' })
   }
 }
 

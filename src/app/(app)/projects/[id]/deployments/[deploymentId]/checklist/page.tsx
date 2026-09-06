@@ -17,7 +17,10 @@ import {
   DeploymentStatusBadge,
   statusLabel,
 } from '@/features/deployments/components/deployment-status-badge'
+import { AddSectionControl } from '@/features/deployments/components/deployment-checklist-editor'
 import { deploymentsService } from '@/features/deployments/server/deployments-service'
+import { can } from '@/lib/authz/authorize'
+import { PERMISSIONS } from '@/lib/authz/permissions'
 import { getRequestContext } from '@/server/context'
 
 export const metadata = { title: 'Deployment Checklist' }
@@ -62,6 +65,18 @@ export default async function DeploymentChecklistPage(props: {
    * offers ticks the server refuses now that everything can.
    */
   const sealed = !isEditable(deployment.status as DeploymentStatus)
+
+  /**
+   * Checklist tailoring: DRAFT only, `deployment.edit`, with the production
+   * escalation applied — the same bar as creating the run. The server enforces
+   * all of this again; this only decides whether to render the controls.
+   */
+  const tailorable =
+    deployment.status === 'DRAFT' &&
+    can(ctx, PERMISSIONS.deployment.edit, {
+      projectId: deployment.projectId,
+      isProductionEnvironment: deployment.isProduction,
+    })
 
   /// The gate, not the gauge. Under ALL_REQUIRED a run reads GO with optional
   /// items unticked, which is what marking them optional is for.
@@ -231,11 +246,13 @@ export default async function DeploymentChecklistPage(props: {
             <DeploymentSectionPanel
               key={section.id}
               index={idx}
+              sectionId={section.id}
               title={section.title}
               description={section.description}
               items={section.items}
               deploymentId={params.deploymentId}
               readOnly={sealed}
+              editable={tailorable}
             />
           ))
         ) : (
@@ -246,6 +263,8 @@ export default async function DeploymentChecklistPage(props: {
             </p>
           </div>
         )}
+
+        {tailorable && <AddSectionControl deploymentId={deployment.id} />}
       </div>
 
       <div className="no-print flex items-center justify-between border-line border-t pt-6">

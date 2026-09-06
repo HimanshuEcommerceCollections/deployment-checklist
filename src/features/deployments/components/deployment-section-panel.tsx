@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
 import { updateDeploymentItem } from '../actions/deployments.actions'
+import { AddItemControl, ItemEditControls, SectionEditBar } from './deployment-checklist-editor'
 
 export interface ChecklistItem {
   /** Snapshot item id — what the toggle mutation keys on. */
@@ -25,21 +26,27 @@ export interface ChecklistItem {
 
 interface DeploymentSectionPanelProps {
   index: number
+  /** Snapshot section id — what the tailoring mutations key on. */
+  sectionId: string
   title: string
   description?: string | null
   items: ChecklistItem[]
   deploymentId: string
   /** COMPLETED runs are sealed — the server refuses edits, so do not offer them. */
   readOnly?: boolean
+  /** DRAFT + deployment.edit: offer checklist tailoring (add/edit/remove). */
+  editable?: boolean
 }
 
 export function DeploymentSectionPanel({
   index,
+  sectionId,
   title,
   description,
   items,
   deploymentId,
   readOnly = false,
+  editable = false,
 }: DeploymentSectionPanelProps) {
   const router = useRouter()
   const [open, setOpen] = useState(index === 0)
@@ -171,6 +178,13 @@ export function DeploymentSectionPanel({
        * it in the document for print to force open.
        */}
       <div id={panelId} hidden={!open} data-print-expand className="border-t border-line">
+        {editable && (
+          <SectionEditBar
+            deploymentId={deploymentId}
+            section={{ id: sectionId, title, description, itemCount: items.length }}
+          />
+        )}
+
         {error && (
           <div className="no-print border-b border-blocked/30 bg-blocked-surface px-6 py-2 text-xs text-blocked">
             {error}
@@ -269,10 +283,14 @@ export function DeploymentSectionPanel({
                     {item.checkedAt ? ` · ${new Date(item.checkedAt).toLocaleString()}` : ''}
                   </p>
                 )}
+
+                {editable && <ItemEditControls deploymentId={deploymentId} item={item} />}
               </div>
             </div>
           )
         })}
+
+        {editable && <AddItemControl deploymentId={deploymentId} sectionId={sectionId} />}
       </div>
     </div>
   )

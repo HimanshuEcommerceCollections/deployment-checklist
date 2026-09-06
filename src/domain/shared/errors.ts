@@ -186,6 +186,8 @@ function preconditionMessage(reason: string): string {
       return 'The checklist is not complete yet.'
     case 'RUN_NOT_IN_PROGRESS':
       return 'Checklist items can only be changed while a deployment is in progress.'
+    case 'RUN_NOT_DRAFT':
+      return 'The checklist can only be tailored while the deployment is still a draft.'
     case 'ILLEGAL_TRANSITION':
       return 'That is not a valid next step for this deployment.'
     case 'EVIDENCE_REQUIRED':

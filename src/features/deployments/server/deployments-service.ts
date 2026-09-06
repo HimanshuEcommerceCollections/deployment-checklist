@@ -22,18 +22,23 @@ import {
 } from '@/lib/authz/authorize'
 import { PERMISSIONS } from '@/lib/authz/permissions'
 import { env } from '@/lib/config/env'
-import { db } from '@/lib/db/prisma'
+import { db, type TxClient } from '@/lib/db/prisma'
 import { isUniqueViolation } from '@/lib/db/errors'
 import { notifications } from '@/lib/notifications/dispatcher'
 import type { NotificationTemplateKey } from '@/lib/notifications/types'
 
 import { fromZonedTime } from 'date-fns-tz'
+import { nanoid } from 'nanoid'
 
 import type {
   CreateDeploymentInput,
   UpdateDeploymentItemInput,
   CreateCommentInput,
   ListProjectDeploymentsInput,
+  ChecklistSectionInput,
+  UpdateChecklistSectionInput,
+  ChecklistItemInput,
+  UpdateChecklistItemInput,
 } from '../schemas/deployments.schema'
 
 const AUDIT_FOR: Record<DeploymentTransition, AuditAction> = {
@@ -464,6 +469,328 @@ export class DeploymentsService {
     })
 
     return item
+  }
+
+  // ── Checklist tailoring (DRAFT only) ──────────────────────────────────────
+  //
+  // A run's checklist is its own frozen copy of the template, so editing it can
+  // never touch the template or another run — that is the point of the snapshot.
+  // Editing is confined to DRAFT: once a run starts, the checklist is the record
+  // of what was agreed, and a gate that can be moved mid-run is not a gate.
+
+  /**
+   * Load a run for checklist editing, or refuse.
+   *
+   * Same two-step check as the other run reads: coarse gate first (the project
+   * is unknown until the row is read), then the exact scoped check — which also
+   * picks up the production escalation, so tailoring a production run needs
+   * `deployment.production` exactly like creating one does.
+   */
+  private async loadDraftChecklist(ctx: RequestContext, deploymentId: string) {
+    requireAnyProject(ctx, PERMISSIONS.deployment.edit)
+
+    const deployment = await db.deploymentRun.findFirstOrThrow({
+      where: {
+        id: deploymentId,
+        project: visibleProject(ctx, PERMISSIONS.deployment.edit),
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        organizationId: true,
+        projectId: true,
+        reference: true,
+        status: true,
+        isProduction: true,
+        checklist: true,
+      },
+    })
+
+    requirePermission(ctx, PERMISSIONS.deployment.edit, {
+      projectId: deployment.projectId,
+      isProductionEnvironment: deployment.isProduction,
+    })
+
+    if (deployment.status !== 'DRAFT') {
+      throw new PreconditionFailedError('RUN_NOT_DRAFT', { status: deployment.status })
+    }
+
+    return deployment
+  }
+
+  /**
+   * Persist an edited snapshot and re-derive everything that hangs off it, in
+   * one transaction: the totals come from the snapshot, the completed counts
+   * from the state rows (checked-or-skipped, mirroring `updateDeploymentItem`),
+   * and the readiness gate reads all four — skip the recount and a tailored run
+   * completes early or never.
+   *
+   * The run is re-asserted to be a DRAFT inside the transaction, so a
+   * concurrent start (or a second editor's write landing first) rolls the whole
+   * edit back instead of mutating a running checklist.
+   */
+  private async writeChecklist(
+    tx: TxClient,
+    ctx: RequestContext,
+    deploymentId: string,
+    sections: Awaited<
+      ReturnType<DeploymentsService['loadDraftChecklist']>
+    >['checklist']['sections'],
+  ) {
+    const flat = sections.flatMap((s) => s.items)
+
+    const pinned = await tx.deploymentRun.updateMany({
+      where: { id: deploymentId, status: 'DRAFT' },
+      data: { updatedById: ctx.actorId },
+    })
+    if (pinned.count === 0) {
+      throw new ConflictError('RUN_NO_LONGER_DRAFT', {})
+    }
+
+    const [completedItems, completedRequired] = await Promise.all([
+      tx.checklistItemState.count({
+        where: { deploymentId, OR: [{ checked: true }, { skipped: true }] },
+      }),
+      tx.checklistItemState.count({
+        where: { deploymentId, isRequired: true, OR: [{ checked: true }, { skipped: true }] },
+      }),
+    ])
+
+    await tx.deploymentRun.update({
+      where: { id: deploymentId },
+      data: {
+        checklist: { update: { sections } },
+        totalItems: flat.length,
+        totalRequired: flat.filter((i) => i.isRequired).length,
+        completedItems,
+        completedRequired,
+        updatedById: ctx.actorId,
+      },
+    })
+  }
+
+  async addChecklistSection(ctx: RequestContext, deploymentId: string, input: ChecklistSectionInput) {
+    const run = await this.loadDraftChecklist(ctx, deploymentId)
+
+    const section = {
+      id: nanoid(),
+      title: input.title,
+      description: input.description ?? null,
+      order: Math.max(0, ...run.checklist.sections.map((s) => s.order + 1)),
+      items: [],
+      sourceSectionId: '',
+    }
+    // Hand-added, so its lineage is itself — same convention as a cloned item.
+    section.sourceSectionId = section.id
+
+    await db.$transaction(async (tx) => {
+      await this.writeChecklist(tx, ctx, run.id, [...run.checklist.sections, section])
+      await audit.record(tx, ctx, AUDIT_ACTIONS.deployment.checklistSectionAdded, {
+        entityType: 'DeploymentRun',
+        entityId: run.id,
+        entityLabel: run.reference,
+        summary: `${ctx.actorName} added section "${section.title}" to ${run.reference}`,
+      })
+    })
+
+    return { id: section.id, projectId: run.projectId }
+  }
+
+  async updateChecklistSection(
+    ctx: RequestContext,
+    deploymentId: string,
+    sectionId: string,
+    input: UpdateChecklistSectionInput,
+  ) {
+    const run = await this.loadDraftChecklist(ctx, deploymentId)
+
+    const target = run.checklist.sections.find((s) => s.id === sectionId)
+    if (!target) throw new ValidationError('That section is not on this checklist.')
+
+    const sections = run.checklist.sections.map((s) =>
+      s.id === sectionId
+        ? {
+            ...s,
+            title: input.title ?? s.title,
+            // `=== undefined` not `??`: null is a deliberate clear.
+            description: input.description === undefined ? s.description : input.description,
+          }
+        : s,
+    )
+
+    await db.$transaction(async (tx) => {
+      await this.writeChecklist(tx, ctx, run.id, sections)
+      await audit.record(tx, ctx, AUDIT_ACTIONS.deployment.checklistSectionUpdated, {
+        entityType: 'DeploymentRun',
+        entityId: run.id,
+        entityLabel: run.reference,
+        summary: `${ctx.actorName} edited section "${input.title ?? target.title}" on ${run.reference}`,
+      })
+    })
+
+    return { id: sectionId, projectId: run.projectId }
+  }
+
+  async removeChecklistSection(ctx: RequestContext, deploymentId: string, sectionId: string) {
+    const run = await this.loadDraftChecklist(ctx, deploymentId)
+
+    const target = run.checklist.sections.find((s) => s.id === sectionId)
+    if (!target) throw new ValidationError('That section is not on this checklist.')
+
+    const sections = run.checklist.sections.filter((s) => s.id !== sectionId)
+    const removedItemIds = target.items.map((i) => i.id)
+
+    await db.$transaction(async (tx) => {
+      // State rows go with their snapshot items — an orphaned row would count
+      // toward the completed totals of items that no longer exist.
+      if (removedItemIds.length > 0) {
+        await tx.checklistItemState.deleteMany({
+          where: { deploymentId: run.id, itemId: { in: removedItemIds } },
+        })
+      }
+      await this.writeChecklist(tx, ctx, run.id, sections)
+      await audit.record(tx, ctx, AUDIT_ACTIONS.deployment.checklistSectionRemoved, {
+        entityType: 'DeploymentRun',
+        entityId: run.id,
+        entityLabel: run.reference,
+        metadata: { title: target.title, items: removedItemIds.length },
+        summary: `${ctx.actorName} removed section "${target.title}" (${removedItemIds.length} item${removedItemIds.length === 1 ? '' : 's'}) from ${run.reference}`,
+      })
+    })
+
+    return { id: sectionId, projectId: run.projectId }
+  }
+
+  async addChecklistItem(
+    ctx: RequestContext,
+    deploymentId: string,
+    sectionId: string,
+    input: ChecklistItemInput,
+  ) {
+    const run = await this.loadDraftChecklist(ctx, deploymentId)
+
+    const section = run.checklist.sections.find((s) => s.id === sectionId)
+    if (!section) throw new ValidationError('That section is not on this checklist.')
+
+    const id = nanoid()
+    const item = {
+      id,
+      label: input.label,
+      helpText: input.helpText ?? null,
+      order: Math.max(0, ...section.items.map((i) => i.order + 1)),
+      isRequired: input.isRequired,
+      evidenceRequired: input.evidenceRequired,
+      ownerRoleKey: null,
+      metadata: null,
+      // Hand-added on this run: lineage points at itself, like a cloned item.
+      sourceItemId: id,
+    }
+
+    const sections = run.checklist.sections.map((s) =>
+      s.id === sectionId ? { ...s, items: [...s.items, item] } : s,
+    )
+
+    await db.$transaction(async (tx) => {
+      /**
+       * Snapshot item and state row are born together, exactly as at run
+       * creation — a snapshot item without a state row renders but can never
+       * be ticked, so the run could never pass its gate.
+       */
+      await tx.checklistItemState.create({
+        data: {
+          organizationId: run.organizationId,
+          deploymentId: run.id,
+          sectionId,
+          itemId: id,
+          order: item.order,
+          isRequired: item.isRequired,
+        },
+      })
+      await this.writeChecklist(tx, ctx, run.id, sections)
+      await audit.record(tx, ctx, AUDIT_ACTIONS.deployment.checklistItemAdded, {
+        entityType: 'DeploymentRun',
+        entityId: run.id,
+        entityLabel: run.reference,
+        summary: `${ctx.actorName} added item "${item.label}" to ${run.reference}`,
+      })
+    })
+
+    return { id, projectId: run.projectId }
+  }
+
+  async updateChecklistItem(
+    ctx: RequestContext,
+    deploymentId: string,
+    itemId: string,
+    input: UpdateChecklistItemInput,
+  ) {
+    const run = await this.loadDraftChecklist(ctx, deploymentId)
+
+    const target = run.checklist.sections.flatMap((s) => s.items).find((i) => i.id === itemId)
+    if (!target) throw new ValidationError('That item is not on this checklist.')
+
+    const isRequired = input.isRequired ?? target.isRequired
+
+    const sections = run.checklist.sections.map((s) => ({
+      ...s,
+      items: s.items.map((i) =>
+        i.id === itemId
+          ? {
+              ...i,
+              label: input.label ?? i.label,
+              helpText: input.helpText === undefined ? i.helpText : input.helpText,
+              isRequired,
+              evidenceRequired: input.evidenceRequired ?? i.evidenceRequired,
+            }
+          : i,
+      ),
+    }))
+
+    await db.$transaction(async (tx) => {
+      // The state row carries its own isRequired for the completed-required
+      // recount — it must not disagree with the snapshot.
+      if (isRequired !== target.isRequired) {
+        await tx.checklistItemState.updateMany({
+          where: { deploymentId: run.id, itemId },
+          data: { isRequired },
+        })
+      }
+      await this.writeChecklist(tx, ctx, run.id, sections)
+      await audit.record(tx, ctx, AUDIT_ACTIONS.deployment.checklistItemUpdated, {
+        entityType: 'DeploymentRun',
+        entityId: run.id,
+        entityLabel: run.reference,
+        summary: `${ctx.actorName} edited item "${input.label ?? target.label}" on ${run.reference}`,
+      })
+    })
+
+    return { id: itemId, projectId: run.projectId }
+  }
+
+  async removeChecklistItem(ctx: RequestContext, deploymentId: string, itemId: string) {
+    const run = await this.loadDraftChecklist(ctx, deploymentId)
+
+    const target = run.checklist.sections.flatMap((s) => s.items).find((i) => i.id === itemId)
+    if (!target) throw new ValidationError('That item is not on this checklist.')
+
+    const sections = run.checklist.sections.map((s) => ({
+      ...s,
+      items: s.items.filter((i) => i.id !== itemId),
+    }))
+
+    await db.$transaction(async (tx) => {
+      await tx.checklistItemState.deleteMany({ where: { deploymentId: run.id, itemId } })
+      await this.writeChecklist(tx, ctx, run.id, sections)
+      await audit.record(tx, ctx, AUDIT_ACTIONS.deployment.checklistItemRemoved, {
+        entityType: 'DeploymentRun',
+        entityId: run.id,
+        entityLabel: run.reference,
+        metadata: { label: target.label, isRequired: target.isRequired },
+        summary: `${ctx.actorName} removed item "${target.label}" from ${run.reference}`,
+      })
+    })
+
+    return { id: itemId, projectId: run.projectId }
   }
 
   /**

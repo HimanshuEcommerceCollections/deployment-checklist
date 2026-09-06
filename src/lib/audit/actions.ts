@@ -116,6 +116,13 @@ export const AUDIT_ACTIONS = {
     restored: 'deployment.restored',
     exported: 'deployment.exported',
 
+    checklistSectionAdded: 'deployment.checklist.section_added',
+    checklistSectionUpdated: 'deployment.checklist.section_updated',
+    checklistSectionRemoved: 'deployment.checklist.section_removed',
+    checklistItemAdded: 'deployment.checklist.item_added',
+    checklistItemUpdated: 'deployment.checklist.item_updated',
+    checklistItemRemoved: 'deployment.checklist.item_removed',
+
     itemChecked: 'deployment.item.checked',
     itemUnchecked: 'deployment.item.unchecked',
     itemsBulkChecked: 'deployment.items_bulk_checked',

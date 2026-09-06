@@ -66,6 +66,51 @@ export const ListProjectDeploymentsSchema = z.object({
 export type ListProjectDeploymentsInput = z.infer<typeof ListProjectDeploymentsSchema>
 
 /**
+ * Checklist tailoring on a DRAFT run — sections and items in the run's frozen
+ * snapshot copy. `nullish` on the free-text fields so an explicit null clears
+ * them (the update services distinguish "absent = keep" from "null = clear").
+ */
+export const ChecklistSectionInputSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(1000).nullish(),
+  })
+  .strict()
+
+export type ChecklistSectionInput = z.infer<typeof ChecklistSectionInputSchema>
+
+export const UpdateChecklistSectionSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(1000).nullish(),
+  })
+  .strict()
+
+export type UpdateChecklistSectionInput = z.infer<typeof UpdateChecklistSectionSchema>
+
+export const ChecklistItemInputSchema = z
+  .object({
+    label: z.string().trim().min(1).max(300),
+    helpText: z.string().trim().max(1000).nullish(),
+    isRequired: z.boolean().default(true),
+    evidenceRequired: z.boolean().default(false),
+  })
+  .strict()
+
+export type ChecklistItemInput = z.infer<typeof ChecklistItemInputSchema>
+
+export const UpdateChecklistItemSchema = z
+  .object({
+    label: z.string().trim().min(1).max(300).optional(),
+    helpText: z.string().trim().max(1000).nullish(),
+    isRequired: z.boolean().optional(),
+    evidenceRequired: z.boolean().optional(),
+  })
+  .strict()
+
+export type UpdateChecklistItemInput = z.infer<typeof UpdateChecklistItemSchema>
+
+/**
  * A status change. `transition` names the verb rather than the target status, so
  * the client cannot ask for "set status to COMPLETED" and bypass the rules about
  * which statuses that is legal from — the state machine owns that mapping.
