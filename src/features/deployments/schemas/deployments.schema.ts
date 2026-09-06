@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { DEPLOYMENT_TRANSITIONS } from '@/domain/deployments/lifecycle'
+import { DEPLOYMENT_STATUSES, DEPLOYMENT_TRANSITIONS } from '@/domain/deployments/lifecycle'
 
 export const CreateDeploymentSchema = z
   .object({
@@ -48,7 +48,7 @@ export type CreateCommentInput = z.infer<typeof CreateCommentSchema>
  */
 export const ListProjectDeploymentsSchema = z.object({
   q: z.string().trim().max(200).optional().catch(undefined),
-  scope: z.enum(['ongoing', 'history']).optional().catch(undefined),
+  status: z.enum(DEPLOYMENT_STATUSES).optional().catch(undefined),
   from: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

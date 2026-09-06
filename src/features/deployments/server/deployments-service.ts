@@ -80,14 +80,6 @@ function visibleProject(ctx: RequestContext, permission: string) {
 }
 
 /**
- * The two reading of a run's status the index filters by. "History" is every
- * terminal state, not just COMPLETED — a failed or cancelled run is part of the
- * record, and hiding it from both tabs would make it unfindable.
- */
-const ONGOING_STATUSES: DeploymentStatus[] = ['DRAFT', 'IN_PROGRESS', 'BLOCKED']
-const HISTORY_STATUSES: DeploymentStatus[] = ['COMPLETED', 'FAILED', 'CANCELLED', 'ROLLED_BACK']
-
-/**
  * A `YYYY-MM-DD` picked in a date input means that day where the ACTOR is, so
  * the boundary is computed in their timezone — `new Date('2026-09-07')` would
  * pin it to UTC and shift every edge by the viewer's offset. Falls back to UTC
@@ -122,9 +114,7 @@ export class DeploymentsService {
       projectId,
       project: visibleProject(ctx, PERMISSIONS.deployment.read),
       deletedAt: null,
-      ...(query.scope
-        ? { status: { in: query.scope === 'ongoing' ? ONGOING_STATUSES : HISTORY_STATUSES } }
-        : {}),
+      ...(query.status ? { status: query.status } : {}),
       ...(query.from || query.to ? { createdAt } : {}),
       /**
        * Search matches the columns the table actually shows (reference, title,

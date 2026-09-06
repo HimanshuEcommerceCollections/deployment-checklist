@@ -35,10 +35,23 @@ interface ProjectDeploymentsExplorerProps {
   total: number
   page: number
   pageSize: number
-  query: { q?: string; scope?: string; from?: string; to?: string }
+  query: { q?: string; status?: string; from?: string; to?: string }
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
+
+const STATUS_OPTIONS = [
+  'DRAFT',
+  'IN_PROGRESS',
+  'BLOCKED',
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+  'ROLLED_BACK',
+] as const
+
+const statusLabel = (status: string) =>
+  status.charAt(0) + status.slice(1).toLowerCase().replace('_', ' ')
 
 const STATUS_STYLES: Record<string, string> = {
   DRAFT: 'bg-muted text-foreground',
@@ -91,7 +104,7 @@ export function ProjectDeploymentsExplorer({
     return () => clearTimeout(handle)
   }, [search])
 
-  const hasFilters = Boolean(query.q || query.scope || query.from || query.to)
+  const hasFilters = Boolean(query.q || query.status || query.from || query.to)
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
   const rangeEnd = Math.min(page * pageSize, total)
@@ -113,15 +126,18 @@ export function ProjectDeploymentsExplorer({
         </div>
 
         <label className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Show</span>
+          <span className="text-muted-foreground">Status</span>
           <select
             className="border-input bg-background h-9 rounded-md border px-2 text-sm"
-            value={query.scope ?? ''}
-            onChange={(event) => setParams({ scope: event.target.value || undefined })}
+            value={query.status ?? ''}
+            onChange={(event) => setParams({ status: event.target.value || undefined })}
           >
             <option value="">All</option>
-            <option value="ongoing">Ongoing</option>
-            <option value="history">History</option>
+            {STATUS_OPTIONS.map((status) => (
+              <option key={status} value={status}>
+                {statusLabel(status)}
+              </option>
+            ))}
           </select>
         </label>
 
@@ -154,7 +170,7 @@ export function ProjectDeploymentsExplorer({
             onClick={() => {
               setSearch('')
               appliedSearch.current = ''
-              setParams({ q: undefined, scope: undefined, from: undefined, to: undefined })
+              setParams({ q: undefined, status: undefined, from: undefined, to: undefined })
             }}
           >
             Clear filters

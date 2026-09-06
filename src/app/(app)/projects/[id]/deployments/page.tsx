@@ -22,7 +22,7 @@ export default async function DeploymentsPage(props: {
 
   const query = {
     q: first(searchParams.q),
-    scope: first(searchParams.scope),
+    status: first(searchParams.status),
     from: first(searchParams.from),
     to: first(searchParams.to),
     page: first(searchParams.page),
@@ -65,7 +65,7 @@ export default async function DeploymentsPage(props: {
         pageSize={pageSize}
         query={{
           q: query.q,
-          scope: query.scope,
+          status: query.status,
           from: query.from,
           to: query.to,
         }}
