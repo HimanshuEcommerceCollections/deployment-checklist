@@ -1,7 +1,6 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { Button } from '@/components/ui/button'
+import { Breadcrumbs } from '@/components/ui/breadcrumbs'
 import { type DeploymentStatus, evaluateGate, isEditable } from '@/domain/deployments/lifecycle'
 import {
   type ChecklistSnapshot,
@@ -197,11 +196,17 @@ export default async function DeploymentChecklistPage(props: {
       </section>
 
       <div className="space-y-4">
-        <div className="no-print flex items-center gap-4">
-          <Link href={`/projects/${params.id}/deployments/${params.deploymentId}`}>
-            <Button variant="ghost">← Back to Deployment</Button>
-          </Link>
-        </div>
+        <Breadcrumbs
+          items={[
+            { label: deployment.project.name, href: `/projects/${params.id}` },
+            { label: 'Deployments', href: `/projects/${params.id}/deployments` },
+            {
+              label: deployment.reference,
+              href: `/projects/${params.id}/deployments/${params.deploymentId}`,
+            },
+            { label: 'Checklist' },
+          ]}
+        />
         <div className="no-print">
           <p className="mb-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
             {deployment.reference} · {deployment.environmentName} · {deployment.version}

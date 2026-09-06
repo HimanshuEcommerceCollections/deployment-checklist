@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { Badge } from '@/components/ui/badge'
+import { Breadcrumbs } from '@/components/ui/breadcrumbs'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -77,12 +78,14 @@ export default async function DeploymentPage(props: {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <Link href={`/projects/${params.id}/deployments`}>
-            <Button variant="ghost" className="mb-2">
-              ← Back
-            </Button>
-          </Link>
+        <div className="space-y-2">
+          <Breadcrumbs
+            items={[
+              { label: deployment.project.name, href: `/projects/${params.id}` },
+              { label: 'Deployments', href: `/projects/${params.id}/deployments` },
+              { label: deployment.reference },
+            ]}
+          />
           <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             {deployment.reference} · {deployment.version}
             {snapshot.templateName ? ` · ${snapshot.templateName} v${snapshot.version}` : ''}
